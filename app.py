@@ -33,13 +33,22 @@ st.markdown("""
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def get_clients() -> list[str]:
+    clients = set()
     outputs = SISTEMA_PATH / "_outputs"
-    if not outputs.exists():
-        return []
-    return sorted(d.name for d in outputs.iterdir() if d.is_dir())
+    if outputs.exists():
+        for d in outputs.iterdir():
+            if d.is_dir():
+                clients.add(d.name)
+    # Clientes criados nesta sessão
+    clients.update(st.session_state.get("session_clients", {}).keys())
+    return sorted(clients)
 
 
 def parse_themes(client_name: str) -> list[dict]:
+    # Primeiro verifica sessão atual (cliente recém-criado)
+    if client_name in st.session_state.get("session_clients", {}):
+        return st.session_state["session_clients"][client_name]["themes"]
+    # Depois verifica arquivo no disco
     path = SISTEMA_PATH / "_outputs" / client_name / "04-lista-temas.md"
     if not path.exists():
         return []
@@ -85,6 +94,11 @@ def parse_themes_from_text(text: str) -> list[dict]:
 
 
 def load_client_context(client_name: str) -> dict:
+    # Verifica sessão primeiro
+    session = st.session_state.get("session_clients", {})
+    if client_name in session and session[client_name].get("context"):
+        return session[client_name]["context"]
+    # Depois verifica disco
     base = SISTEMA_PATH / "_outputs" / client_name
     files = ["01-mapa-empatia.md", "02-proposta-valor.md", "03-personas.md"]
     return {f: (base / f).read_text(encoding="utf-8") for f in files if (base / f).exists()}
@@ -150,6 +164,7 @@ defaults = {
     "novo_cliente_temas": None,
     "novo_cliente_temas_raw": "",
     "objetivos_extraidos": "",
+    "session_clients": {},  # {nome: {"themes": [...], "context": {}}}
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -515,18 +530,30 @@ with tab_novo:
                 if not nome_cliente:
                     st.error("Nome do cliente em branco.")
                 else:
-                    header = f"# LISTA DE TEMAS — {nome_cliente}\n\n"
-                    header += "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n"
-                    header += "|---|---|---|---|---|\n"
-                    full_content = header + "\n".join(
-                        f"| {t['num']} | {t['pilar']} | {t['tema']} | {t['formato']} | {t['persona']} |"
-                        for t in temas
-                    )
-                    save_themes(nome_cliente, full_content)
-                    save_context(nome_cliente, mapa_empatia, proposta_valor, personas)
+                    # Salva na sessão atual (disponível imediatamente)
+                    st.session_state["session_clients"][nome_cliente] = {
+                        "themes": temas,
+                        "context": {
+                            "01-mapa-empatia.md": mapa_empatia,
+                            "02-proposta-valor.md": proposta_valor,
+                            "03-personas.md": personas,
+                        }
+                    }
+                    # Tenta salvar no disco também
+                    try:
+                        header = "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n|---|---|---|---|---|\n"
+                        full_content = f"# LISTA DE TEMAS — {nome_cliente}\n\n" + header + "\n".join(
+                            f"| {t['num']} | {t['pilar']} | {t['tema']} | {t['formato']} | {t['persona']} |"
+                            for t in temas
+                        )
+                        save_themes(nome_cliente, full_content)
+                        save_context(nome_cliente, mapa_empatia, proposta_valor, personas)
+                    except Exception:
+                        pass  # Disco pode ser read-only no cloud
+
                     st.session_state.novo_cliente_temas = None
                     st.session_state.novo_cliente_temas_raw = ""
-                    st.success(f"✅ Cliente **{nome_cliente}** salvo! Vá para a aba **📋 Gerar Conteúdo** e selecione-o.")
+                    st.success(f"✅ Cliente **{nome_cliente}** pronto! Clique na aba **📋 Gerar Conteúdo** e selecione-o.")
                     st.balloons()
 
         with col_cancel:
