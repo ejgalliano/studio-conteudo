@@ -1,12 +1,43 @@
 from groq import Groq
 import os
 
+MODELS_PRIMARY = "llama-3.3-70b-versatile"
+MODELS_FALLBACK = ["llama-3.1-8b-instant", "gemma2-9b-it"]
+
 
 def _groq_client():
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY não encontrada. Verifique o arquivo .env")
     return Groq(api_key=api_key)
+
+
+def _chat_with_fallback(client, messages, max_tokens=2000, temperature=0.7):
+    """Try primary model, fall back to smaller models on rate limit (429)."""
+    models = [MODELS_PRIMARY] + MODELS_FALLBACK
+    last_error = None
+    for model in models:
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "rate_limit" in err_str.lower() or "Rate limit" in err_str:
+                last_error = e
+                continue
+            raise
+    # All models exhausted
+    raise RuntimeError(
+        "⚠️ Limite diário de tokens atingido em todos os modelos.\n\n"
+        "O plano gratuito do Groq permite 100.000 tokens por dia. "
+        "O limite será resetado à meia-noite (horário de São Paulo).\n\n"
+        "Tente novamente amanhã ou acesse groq.com para aumentar seu limite."
+    ) from last_error
 
 
 def extract_objectives(transcricao: str) -> str:
@@ -43,13 +74,7 @@ def extract_objectives(transcricao: str) -> str:
 
 Seja específico e use informações reais da transcrição. Não invente dados."""
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500,
-        temperature=0.3,
-    )
-    return response.choices[0].message.content
+    return _chat_with_fallback(client, [{"role": "user", "content": prompt}], max_tokens=1500, temperature=0.3)
 
 
 def _build_context(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str) -> str:
@@ -83,13 +108,7 @@ Escreva em português brasileiro.
 |---|---|---|---|---|
 | {str(inicio).zfill(3)} | {emoji} {pilar} | [tema específico] | [formato] | [persona] |"""
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=4000,
-        temperature=0.8,
-    )
-    return response.choices[0].message.content
+    return _chat_with_fallback(client, [{"role": "user", "content": prompt}], max_tokens=4000, temperature=0.8)
 
 
 def generate_themes(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str, progress_callback=None) -> str:
@@ -167,11 +186,4 @@ Formatos especiais:
 Escreva em português brasileiro. Tom: profissional, acessível, direto ao ponto. \
 Reflita o tom de voz do cliente (confiante, experiente, próximo — nunca corporativo)."""
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=2000,
-        temperature=0.7,
-    )
-
-    return response.choices[0].message.content
+    return _chat_with_fallback(client, [{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.7)
