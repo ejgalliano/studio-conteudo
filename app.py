@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from generator import generate_caption, generate_themes
+from generator import generate_caption, generate_themes, extract_objectives
 from exporter import export_to_word
 
 load_dotenv()
@@ -149,6 +149,7 @@ defaults = {
     "selected_format": "📱 Card Único",
     "novo_cliente_temas": None,
     "novo_cliente_temas_raw": "",
+    "objetivos_extraidos": "",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -384,7 +385,7 @@ with tab_studio:
 # ════════════════════════════════════════════════════════════
 with tab_novo:
     st.markdown("### ➕ Cadastrar Novo Cliente")
-    st.markdown("Preencha os dados estratégicos do cliente e gere a lista de temas automaticamente.")
+    st.markdown("Faça upload da transcrição do briefing — a IA extrai os objetivos automaticamente. Complemente com os demais documentos se tiver.")
     st.divider()
 
     nome_cliente = st.text_input(
@@ -392,41 +393,62 @@ with tab_novo:
         placeholder="NOME-DO-CLIENTE",
     ).upper().strip().replace(" ", "-")
 
-    st.caption("Aceita arquivos **.docx**, **.pdf** ou **.txt**")
-    st.markdown("")
+    st.markdown("#### 📝 Transcrição do Briefing")
+    st.caption("Aceita **.txt**, **.docx** ou **.pdf** — o conteúdo é o que importa")
+    transcricao_file = st.file_uploader("Transcrição / Briefing", type=["txt", "docx", "pdf"], key="up_transcricao", label_visibility="collapsed")
+
+    transcricao_texto = extract_text(transcricao_file) if transcricao_file else ""
+
+    if transcricao_file and transcricao_texto:
+        col_info, col_btn = st.columns([3, 1])
+        with col_info:
+            st.success(f"✅ Transcrição carregada: **{transcricao_file.name}** ({len(transcricao_texto):,} caracteres)")
+        with col_btn:
+            if st.button("🤖 Extrair Objetivos", use_container_width=True, type="primary"):
+                with st.spinner("Lendo a transcrição e extraindo objetivos..."):
+                    try:
+                        st.session_state.objetivos_extraidos = extract_objectives(transcricao_texto)
+                    except Exception as e:
+                        st.error(f"Erro ao extrair objetivos: {e}")
+
+    st.markdown("#### 🎯 Objetivos do Cliente")
+    objetivos = st.text_area(
+        "objetivos",
+        value=st.session_state.objetivos_extraidos,
+        placeholder="Clique em 'Extrair Objetivos' após carregar a transcrição, ou escreva manualmente...",
+        height=220,
+        label_visibility="collapsed",
+        key="objetivos_editor",
+    )
+
+    st.markdown("#### 📂 Documentos Estratégicos *(opcional — se já tiver prontos)*")
+    st.caption("Aceita **.txt**, **.docx** ou **.pdf**")
 
     col_a, col_b = st.columns(2)
-
     with col_a:
-        obj_file = st.file_uploader("🎯 Objetivos do cliente", type=["docx", "pdf", "txt"], key="up_obj")
-        mapa_file = st.file_uploader("🧠 Mapa de Empatia", type=["docx", "pdf", "txt"], key="up_mapa")
-
+        mapa_file    = st.file_uploader("🧠 Mapa de Empatia", type=["txt", "docx", "pdf"], key="up_mapa")
+        proposta_file = st.file_uploader("💎 Proposta de Valor", type=["txt", "docx", "pdf"], key="up_prop")
     with col_b:
-        proposta_file = st.file_uploader("💎 Proposta de Valor", type=["docx", "pdf", "txt"], key="up_prop")
-        personas_file = st.file_uploader("👤 Personas", type=["docx", "pdf", "txt"], key="up_pers")
+        personas_file = st.file_uploader("👤 Personas", type=["txt", "docx", "pdf"], key="up_pers")
 
-    # Status dos uploads
-    uploads = {
-        "Objetivos": obj_file,
-        "Mapa de Empatia": mapa_file,
-        "Proposta de Valor": proposta_file,
-        "Personas": personas_file,
-    }
-    uploaded = [k for k, v in uploads.items() if v is not None]
-    if uploaded:
-        st.success(f"✅ Carregados: {', '.join(uploaded)}")
-
-    objetivos     = extract_text(obj_file)
-    mapa_empatia  = extract_text(mapa_file)
+    mapa_empatia   = extract_text(mapa_file)
     proposta_valor = extract_text(proposta_file)
-    personas      = extract_text(personas_file)
+    personas       = extract_text(personas_file)
+
+    st.markdown("#### 💬 Instruções Adicionais *(opcional)*")
+    instrucoes = st.text_area(
+        "instrucoes",
+        placeholder="Ex: Focar em conteúdo para WhatsApp, evitar temas sobre financiamento, priorizar datas comemorativas de maio...",
+        height=100,
+        label_visibility="collapsed",
+    )
 
     st.divider()
 
     if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True):
         if not nome_cliente:
             st.error("Preencha o nome do cliente.")
-        elif not any([objetivos, mapa_empatia, proposta_valor, personas]):
+        elif not any([objetivos, mapa_empatia, proposta_valor, personas, transcricao_texto]):
             st.error("Preencha pelo menos um dos campos estratégicos.")
         elif not os.getenv("GROQ_API_KEY"):
             st.error("GROQ_API_KEY não configurada.")
@@ -446,10 +468,10 @@ with tab_novo:
 
                 raw = generate_themes(
                     client_name=nome_cliente,
-                    mapa_empatia=mapa_empatia,
+                    mapa_empatia=mapa_empatia or transcricao_texto[:3000],
                     proposta_valor=proposta_valor,
                     personas=personas,
-                    objetivos=objetivos,
+                    objetivos=objetivos + ("\n\n## INSTRUÇÕES ADICIONAIS:\n" + instrucoes if instrucoes else ""),
                     progress_callback=update_progress,
                 )
                 progress.progress(100, text="Concluído!")

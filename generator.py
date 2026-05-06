@@ -9,6 +9,49 @@ def _groq_client():
     return Groq(api_key=api_key)
 
 
+def extract_objectives(transcricao: str) -> str:
+    client = _groq_client()
+    prompt = f"""Você é um estrategista de marketing digital. Leia a transcrição de briefing abaixo e extraia um resumo estruturado dos objetivos do cliente.
+
+## TRANSCRIÇÃO:
+{transcricao[:6000]}
+
+## RETORNE exatamente neste formato (em português brasileiro):
+
+## Objetivo Principal
+[objetivo central do cliente com as redes sociais]
+
+## Objetivos Específicos
+1. [objetivo]
+2. [objetivo]
+3. [objetivo]
+
+## Público-Alvo
+[descrição do público principal]
+
+## Produtos e Serviços
+[o que o cliente vende, ticket médio se mencionado]
+
+## Tom de Voz
+[como a marca deve soar: formal, descontraído, técnico, etc.]
+
+## Restrições e Preferências
+[o que NÃO fazer, preferências mencionadas]
+
+## Diferenciais
+[o que diferencia esse cliente da concorrência]
+
+Seja específico e use informações reais da transcrição. Não invente dados."""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1500,
+        temperature=0.3,
+    )
+    return response.choices[0].message.content
+
+
 def _build_context(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str) -> str:
     # Truncate each doc to avoid token limit on free tier
     return f"""## CLIENTE: {client_name}
