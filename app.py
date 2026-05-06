@@ -588,18 +588,19 @@ with tab_novo:
         elif not os.getenv("GROQ_API_KEY"):
             st.error("GROQ_API_KEY não configurada.")
         else:
-            st.info("Gerando temas em 3 etapas (Comercial → Institucional → Educativo). Aguarde ~60 segundos...")
+            st.info("Gerando temas em 3 etapas. Cada etapa leva ~20–30 segundos. Total estimado: 1–2 minutos.")
             progress = st.progress(0, text="Iniciando...")
             status = st.empty()
 
             try:
                 etapas = {"Comercial": 33, "Institucional": 66, "Educativo": 100}
-                resultados = {}
+                labels = ["🔴", "🔵", "🟢"]
+                descricoes = ["Comercial (etapa 1/3)", "Institucional (etapa 2/3)", "Educativo (etapa 3/3)"]
 
                 def update_progress(pilar):
                     pct = list(etapas.keys()).index(pilar)
-                    progress.progress(pct * 33, text=f"Gerando temas {['🔴','🔵','🟢'][pct]} {pilar}...")
-                    status.caption(f"Processando: {pilar}...")
+                    progress.progress(pct * 33, text=f"Gerando temas {labels[pct]} {descricoes[pct]} — aguarde...")
+                    status.caption(f"⏳ Chamando IA para gerar temas {pilar}... isso pode levar até 30 segundos.")
 
                 raw = generate_themes(
                     client_name=nome_cliente,
