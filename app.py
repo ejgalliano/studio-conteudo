@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 import os
+import io
 from pathlib import Path
 from dotenv import load_dotenv
+from docx import Document as DocxDocument
+import fitz  # pymupdf
 
 from generator import generate_caption, generate_themes
 from exporter import export_to_word
@@ -106,6 +109,22 @@ def save_themes(client_name: str, content: str):
     folder = SISTEMA_PATH / "_outputs" / client_name
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "04-lista-temas.md").write_text(content, encoding="utf-8")
+
+
+def extract_text(uploaded_file) -> str:
+    if uploaded_file is None:
+        return ""
+    name = uploaded_file.name.lower()
+    raw = uploaded_file.read()
+    if name.endswith(".pdf"):
+        doc = fitz.open(stream=raw, filetype="pdf")
+        return "\n".join(page.get_text() for page in doc)
+    elif name.endswith(".docx"):
+        doc = DocxDocument(io.BytesIO(raw))
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    elif name.endswith(".txt"):
+        return raw.decode("utf-8", errors="ignore")
+    return ""
 
 
 def save_context(client_name: str, mapa: str, proposta: str, personas: str):
@@ -373,31 +392,34 @@ with tab_novo:
         placeholder="NOME-DO-CLIENTE",
     ).upper().strip().replace(" ", "-")
 
+    st.caption("Aceita arquivos **.docx**, **.pdf** ou **.txt**")
+    st.markdown("")
+
     col_a, col_b = st.columns(2)
 
     with col_a:
-        objetivos = st.text_area(
-            "🎯 Objetivos do cliente",
-            placeholder="Descreva os objetivos principais, campanhas prioritárias, tom de voz, restrições...",
-            height=180,
-        )
-        mapa_empatia = st.text_area(
-            "🧠 Mapa de Empatia",
-            placeholder="Cole aqui o mapa de empatia completo...",
-            height=250,
-        )
+        obj_file = st.file_uploader("🎯 Objetivos do cliente", type=["docx", "pdf", "txt"], key="up_obj")
+        mapa_file = st.file_uploader("🧠 Mapa de Empatia", type=["docx", "pdf", "txt"], key="up_mapa")
 
     with col_b:
-        proposta_valor = st.text_area(
-            "💎 Proposta de Valor",
-            placeholder="Cole aqui a proposta de valor completa...",
-            height=200,
-        )
-        personas = st.text_area(
-            "👤 Personas",
-            placeholder="Cole aqui as personas completas...",
-            height=230,
-        )
+        proposta_file = st.file_uploader("💎 Proposta de Valor", type=["docx", "pdf", "txt"], key="up_prop")
+        personas_file = st.file_uploader("👤 Personas", type=["docx", "pdf", "txt"], key="up_pers")
+
+    # Status dos uploads
+    uploads = {
+        "Objetivos": obj_file,
+        "Mapa de Empatia": mapa_file,
+        "Proposta de Valor": proposta_file,
+        "Personas": personas_file,
+    }
+    uploaded = [k for k, v in uploads.items() if v is not None]
+    if uploaded:
+        st.success(f"✅ Carregados: {', '.join(uploaded)}")
+
+    objetivos     = extract_text(obj_file)
+    mapa_empatia  = extract_text(mapa_file)
+    proposta_valor = extract_text(proposta_file)
+    personas      = extract_text(personas_file)
 
     st.divider()
 
