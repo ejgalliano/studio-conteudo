@@ -9,55 +9,68 @@ def _groq_client():
     return Groq(api_key=api_key)
 
 
-def generate_themes(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str) -> str:
-    client = _groq_client()
-
-    prompt = f"""Você é um estrategista de marketing digital sênior. Com base nos documentos estratégicos do cliente abaixo, gere uma lista de 350 temas de conteúdo para redes sociais.
-
-## CLIENTE: {client_name}
-
+def _build_context(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str) -> str:
+    # Truncate each doc to avoid token limit on free tier
+    return f"""## CLIENTE: {client_name}
 ## OBJETIVOS:
-{objetivos}
-
+{objetivos[:1500]}
 ## MAPA DE EMPATIA:
-{mapa_empatia}
-
+{mapa_empatia[:1500]}
 ## PROPOSTA DE VALOR:
-{proposta_valor}
-
+{proposta_valor[:1500]}
 ## PERSONAS:
-{personas}
+{personas[:1500]}"""
+
+
+def _generate_themes_batch(client, context: str, pilar: str, emoji: str, quantidade: int, inicio: int) -> str:
+    prompt = f"""Você é um estrategista de marketing digital sênior. Com base nos documentos abaixo, gere exatamente {quantidade} temas de conteúdo do pilar {pilar} para redes sociais.
+
+{context}
 
 ## INSTRUÇÕES:
-Gere exatamente 350 temas distribuídos assim:
-- 🔴 COMERCIAL (30% = ~105 temas): venda direta, produtos, ofertas, captação, depoimentos, provas sociais
-- 🔵 INSTITUCIONAL (30% = ~105 temas): história, bastidores, valores, equipe, credibilidade, posicionamento
-- 🟢 EDUCATIVO (40% = ~140 temas): dicas práticas, dúvidas frequentes, mitos e verdades, tutoriais, tendências
+Gere exatamente {quantidade} temas do pilar {emoji} {pilar}.
+Temas concretos, específicos e acionáveis — não genéricos.
+Varie os formatos: Card único, Carrossel, Reels, Stories, Tráfego Pago.
+Persona-alvo baseada nas personas fornecidas.
+Numere de {str(inicio).zfill(3)} até {str(inicio + quantidade - 1).zfill(3)}.
+Escreva em português brasileiro.
 
-## FORMATO OBRIGATÓRIO (tabela markdown):
-Retorne APENAS a tabela, sem texto antes ou depois. Use exatamente este formato:
-
+## FORMATO OBRIGATÓRIO — retorne APENAS a tabela, sem texto antes ou depois:
 | Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |
 |---|---|---|---|---|
-| 001 | 🔴 Comercial | [tema] | [Card único / Carrossel / Reels / Stories / Tráfego Pago] | [persona] |
-| 002 | 🔵 Institucional | [tema] | [formato] | [persona] |
-| 003 | 🟢 Educativo | [tema] | [formato] | [persona] |
-
-Regras:
-- Temas concretos, específicos e acionáveis — não genéricos
-- Varie os formatos sugeridos entre os 5 tipos
-- Persona-alvo baseada nas personas fornecidas
-- Numere de 001 até 350
-- Escreva em português brasileiro"""
+| {str(inicio).zfill(3)} | {emoji} {pilar} | [tema específico] | [formato] | [persona] |"""
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=8000,
+        max_tokens=4000,
         temperature=0.8,
     )
-
     return response.choices[0].message.content
+
+
+def generate_themes(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str, progress_callback=None) -> str:
+    client = _groq_client()
+    context = _build_context(client_name, mapa_empatia, proposta_valor, personas, objetivos)
+
+    batches = [
+        ("Comercial",     "🔴", 105,  1),
+        ("Institucional", "🔵", 105, 106),
+        ("Educativo",     "🟢", 140, 211),
+    ]
+
+    all_rows = []
+    for pilar, emoji, qtd, inicio in batches:
+        if progress_callback:
+            progress_callback(pilar)
+        result = _generate_themes_batch(client, context, pilar, emoji, qtd, inicio)
+        # Extract only table rows
+        for line in result.splitlines():
+            if line.startswith("|") and not line.startswith("| Nº") and not line.startswith("|---"):
+                all_rows.append(line)
+
+    header = "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n|---|---|---|---|---|\n"
+    return header + "\n".join(all_rows)
 
 
 def generate_caption(theme: dict, formato: str, client_name: str, client_context: dict, guia: str) -> str:

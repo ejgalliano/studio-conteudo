@@ -431,20 +431,33 @@ with tab_novo:
         elif not os.getenv("GROQ_API_KEY"):
             st.error("GROQ_API_KEY não configurada.")
         else:
-            with st.spinner("Gerando 350 temas... isso pode levar 30 a 60 segundos..."):
-                try:
-                    raw = generate_themes(
-                        client_name=nome_cliente,
-                        mapa_empatia=mapa_empatia,
-                        proposta_valor=proposta_valor,
-                        personas=personas,
-                        objetivos=objetivos,
-                    )
-                    temas_parsed = parse_themes_from_text(raw)
-                    st.session_state.novo_cliente_temas = temas_parsed
-                    st.session_state.novo_cliente_temas_raw = raw
-                except Exception as e:
-                    st.error(f"Erro ao gerar temas: {e}")
+            st.info("Gerando temas em 3 etapas (Comercial → Institucional → Educativo). Aguarde ~60 segundos...")
+            progress = st.progress(0, text="Iniciando...")
+            status = st.empty()
+
+            try:
+                etapas = {"Comercial": 33, "Institucional": 66, "Educativo": 100}
+                resultados = {}
+
+                def update_progress(pilar):
+                    pct = list(etapas.keys()).index(pilar)
+                    progress.progress(pct * 33, text=f"Gerando temas {['🔴','🔵','🟢'][pct]} {pilar}...")
+                    status.caption(f"Processando: {pilar}...")
+
+                raw = generate_themes(
+                    client_name=nome_cliente,
+                    mapa_empatia=mapa_empatia,
+                    proposta_valor=proposta_valor,
+                    personas=personas,
+                    objetivos=objetivos,
+                    progress_callback=update_progress,
+                )
+                progress.progress(100, text="Concluído!")
+                temas_parsed = parse_themes_from_text(raw)
+                st.session_state.novo_cliente_temas = temas_parsed
+                st.session_state.novo_cliente_temas_raw = raw
+            except Exception as e:
+                st.error(f"Erro ao gerar temas: {e}")
 
     # Show generated themes for approval
     if st.session_state.novo_cliente_temas:
