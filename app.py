@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+import base64
+import requests
 from pathlib import Path
 from dotenv import load_dotenv
 from docx import Document as DocxDocument
@@ -119,6 +121,38 @@ def pilar_emoji(pilar: str) -> str:
     return "⚪"
 
 
+def save_to_github(client_name: str, files: dict) -> tuple[bool, str]:
+    token = os.getenv("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
+    if not token:
+        return False, "GITHUB_TOKEN não configurado nos secrets do Streamlit."
+
+    repo = "ejgalliano/studio-conteudo"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+    for path, content in files.items():
+        if not content:
+            continue
+        url = f"https://api.github.com/repos/{repo}/contents/{path}"
+        encoded = base64.b64encode(content.encode("utf-8")).decode()
+        data = {
+            "message": f"feat: adiciona cliente {client_name} via Studio",
+            "content": encoded,
+        }
+        # Verifica se arquivo já existe (para pegar o sha)
+        get_resp = requests.get(url, headers=headers)
+        if get_resp.status_code == 200:
+            data["sha"] = get_resp.json()["sha"]
+
+        put_resp = requests.put(url, json=data, headers=headers)
+        if not put_resp.ok:
+            return False, f"Erro ao salvar `{path}`: {put_resp.json().get('message', 'desconhecido')}"
+
+    return True, "ok"
+
+
 def save_themes(client_name: str, content: str):
     folder = SISTEMA_PATH / "_outputs" / client_name
     folder.mkdir(parents=True, exist_ok=True)
@@ -192,9 +226,24 @@ with tab_studio:
         st.info("Nenhum cliente encontrado. Use a aba **➕ Novo Cliente** para cadastrar.")
         st.stop()
 
-    top_left, top_mid, top_right = st.columns([3, 5, 2])
+    top_left, top_mid, top_right = st.columns([3, 4, 2])
     with top_left:
         client = st.selectbox("Cliente", clients, label_visibility="collapsed", key="client_select")
+    with top_mid:
+        if st.button("🔄 Resetar temas deste cliente", use_container_width=True, help="Apaga os temas atuais para gerar novas ideias"):
+            if client in st.session_state.get("session_clients", {}):
+                del st.session_state["session_clients"][client]
+            # Remove do disco se existir
+            themes_path = SISTEMA_PATH / "_outputs" / client / "04-lista-temas.md"
+            if themes_path.exists():
+                try:
+                    themes_path.unlink()
+                except Exception:
+                    pass
+            st.session_state.selected_theme = None
+            st.session_state.generated_caption = ""
+            st.success(f"Temas de **{client}** resetados. Vá para **➕ Novo Cliente** para gerar novas ideias.")
+            st.rerun()
     with top_right:
         doc_count = len(st.session_state.document_items)
         st.markdown(f"<div class='status-bar'>📄 {doc_count} no documento</div>", unsafe_allow_html=True)
@@ -555,9 +604,36 @@ with tab_novo:
                     st.session_state.novo_cliente_temas_raw = ""
                     st.success(f"✅ Cliente **{nome_cliente}** pronto! Clique na aba **📋 Gerar Conteúdo** e selecione-o.")
                     st.balloons()
+                    st.rerun()
 
         with col_cancel:
-            if st.button("🔄 Regerar temas", use_container_width=True):
+            if st.button("🔄 Gerar novamente", use_container_width=True):
                 st.session_state.novo_cliente_temas = None
                 st.session_state.novo_cliente_temas_raw = ""
                 st.rerun()
+
+        # Salvar permanentemente no GitHub
+        st.divider()
+        st.markdown("#### 💾 Salvar permanentemente")
+        st.caption("Salva os temas no GitHub para ficarem disponíveis mesmo após reiniciar o app.")
+        if st.button("☁️ Salvar no GitHub", use_container_width=True):
+            if not nome_cliente:
+                st.error("Nome do cliente em branco.")
+            else:
+                with st.spinner("Salvando no GitHub..."):
+                    header = "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n|---|---|---|---|---|\n"
+                    temas_content = f"# LISTA DE TEMAS — {nome_cliente}\n\n" + header + "\n".join(
+                        f"| {t['num']} | {t['pilar']} | {t['tema']} | {t['formato']} | {t['persona']} |"
+                        for t in temas
+                    )
+                    files = {
+                        f"_outputs/{nome_cliente}/04-lista-temas.md": temas_content,
+                        f"_outputs/{nome_cliente}/01-mapa-empatia.md": mapa_empatia,
+                        f"_outputs/{nome_cliente}/02-proposta-valor.md": proposta_valor,
+                        f"_outputs/{nome_cliente}/03-personas.md": personas,
+                    }
+                    ok, msg = save_to_github(nome_cliente, files)
+                    if ok:
+                        st.success("✅ Salvo no GitHub! O cliente estará disponível permanentemente.")
+                    else:
+                        st.error(f"❌ {msg}")
