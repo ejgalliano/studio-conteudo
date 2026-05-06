@@ -153,6 +153,49 @@ def save_to_github(client_name: str, files: dict) -> tuple[bool, str]:
     return True, "ok"
 
 
+def delete_client(client_name: str) -> tuple[bool, str]:
+    """Remove client from session state, disk, and GitHub."""
+    # Remove from session
+    session = st.session_state.get("session_clients", {})
+    if client_name in session:
+        del st.session_state["session_clients"][client_name]
+
+    # Remove from disk
+    import shutil
+    client_path = SISTEMA_PATH / "_outputs" / client_name
+    if client_path.exists():
+        try:
+            shutil.rmtree(client_path)
+        except Exception as e:
+            return False, f"Erro ao apagar pasta local: {e}"
+
+    # Remove from GitHub
+    token = os.getenv("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
+    if token:
+        repo = "ejgalliano/studio-conteudo"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+        files_to_delete = [
+            f"_outputs/{client_name}/04-lista-temas.md",
+            f"_outputs/{client_name}/01-mapa-empatia.md",
+            f"_outputs/{client_name}/02-proposta-valor.md",
+            f"_outputs/{client_name}/03-personas.md",
+        ]
+        for file_path in files_to_delete:
+            url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+            get_resp = requests.get(url, headers=headers)
+            if get_resp.status_code == 200:
+                sha = get_resp.json()["sha"]
+                requests.delete(url, headers=headers, json={
+                    "message": f"chore: remove cliente {client_name}",
+                    "sha": sha,
+                })
+
+    return True, "ok"
+
+
 def save_themes(client_name: str, content: str):
     folder = SISTEMA_PATH / "_outputs" / client_name
     folder.mkdir(parents=True, exist_ok=True)
@@ -199,6 +242,7 @@ defaults = {
     "novo_cliente_temas_raw": "",
     "objetivos_extraidos": "",
     "session_clients": {},  # {nome: {"themes": [...], "context": {}}}
+    "confirm_delete_client": "",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -226,14 +270,13 @@ with tab_studio:
         st.info("Nenhum cliente encontrado. Use a aba **➕ Novo Cliente** para cadastrar.")
         st.stop()
 
-    top_left, top_mid, top_right = st.columns([3, 4, 2])
+    top_left, top_mid, top_del, top_right = st.columns([3, 3, 1, 2])
     with top_left:
         client = st.selectbox("Cliente", clients, label_visibility="collapsed", key="client_select")
     with top_mid:
-        if st.button("🔄 Resetar temas deste cliente", use_container_width=True, help="Apaga os temas atuais para gerar novas ideias"):
+        if st.button("🔄 Resetar temas", use_container_width=True, help="Apaga os temas atuais para gerar novas ideias"):
             if client in st.session_state.get("session_clients", {}):
                 del st.session_state["session_clients"][client]
-            # Remove do disco se existir
             themes_path = SISTEMA_PATH / "_outputs" / client / "04-lista-temas.md"
             if themes_path.exists():
                 try:
@@ -242,11 +285,38 @@ with tab_studio:
                     pass
             st.session_state.selected_theme = None
             st.session_state.generated_caption = ""
+            st.session_state.confirm_delete_client = ""
             st.success(f"Temas de **{client}** resetados. Vá para **➕ Novo Cliente** para gerar novas ideias.")
+            st.rerun()
+    with top_del:
+        if st.button("🗑️", use_container_width=True, help="Apagar este cliente permanentemente"):
+            st.session_state.confirm_delete_client = client
             st.rerun()
     with top_right:
         doc_count = len(st.session_state.document_items)
         st.markdown(f"<div class='status-bar'>📄 {doc_count} no documento</div>", unsafe_allow_html=True)
+
+    # Confirmation bar
+    if st.session_state.confirm_delete_client == client:
+        st.warning(f"⚠️ Tem certeza que deseja **apagar o cliente {client}** permanentemente? Isso remove os temas do GitHub também.")
+        conf_yes, conf_no, _ = st.columns([2, 2, 4])
+        with conf_yes:
+            if st.button("✅ Sim, apagar", type="primary", use_container_width=True, key="confirm_del_yes"):
+                with st.spinner("Apagando cliente..."):
+                    ok, msg = delete_client(client)
+                st.session_state.confirm_delete_client = ""
+                st.session_state.selected_theme = None
+                st.session_state.generated_caption = ""
+                st.session_state.last_client = ""
+                if ok:
+                    st.success(f"✅ Cliente **{client}** apagado com sucesso.")
+                else:
+                    st.error(f"❌ {msg}")
+                st.rerun()
+        with conf_no:
+            if st.button("❌ Cancelar", use_container_width=True, key="confirm_del_no"):
+                st.session_state.confirm_delete_client = ""
+                st.rerun()
 
     if client != st.session_state.last_client:
         st.session_state.selected_theme = None
