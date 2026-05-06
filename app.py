@@ -1,11 +1,10 @@
 import streamlit as st
 import pandas as pd
 import os
-import re
 from pathlib import Path
 from dotenv import load_dotenv
 
-from generator import generate_caption
+from generator import generate_caption, generate_themes
 from exporter import export_to_word
 
 load_dotenv()
@@ -19,24 +18,10 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Remove top padding */
     .block-container { padding-top: 1rem; }
-
-    /* Theme list buttons */
     div[data-testid="stDataFrame"] { border-radius: 8px; }
-
-    /* Pill badges */
-    .pill-red   { background:#fdecea; color:#c0392b; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600; }
-    .pill-blue  { background:#e8f4fd; color:#216eab; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600; }
-    .pill-green { background:#eafaf1; color:#27ae60; border-radius:12px; padding:2px 10px; font-size:12px; font-weight:600; }
-
-    /* Document item */
-    .doc-item { background:#f8f9fa; border-left:4px solid #4a90d9; border-radius:6px; padding:12px; margin:8px 0; }
-
-    /* Status bar */
     .status-bar { background:#1e1e2e; color:#cdd6f4; border-radius:8px; padding:10px 16px; font-family:monospace; font-size:13px; }
 </style>
 """, unsafe_allow_html=True)
@@ -55,9 +40,29 @@ def parse_themes(client_name: str) -> list[dict]:
     path = SISTEMA_PATH / "_outputs" / client_name / "04-lista-temas.md"
     if not path.exists():
         return []
-
     themes = []
     for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        parts = [p.strip() for p in line.split("|")[1:-1]]
+        if len(parts) < 5:
+            continue
+        num = parts[0].strip()
+        if not num.isdigit():
+            continue
+        themes.append({
+            "num": num,
+            "pilar": parts[1],
+            "tema": parts[2],
+            "formato": parts[3],
+            "persona": parts[4],
+        })
+    return themes
+
+
+def parse_themes_from_text(text: str) -> list[dict]:
+    themes = []
+    for line in text.splitlines():
         if not line.startswith("|"):
             continue
         parts = [p.strip() for p in line.split("|")[1:-1]]
@@ -97,6 +102,23 @@ def pilar_emoji(pilar: str) -> str:
     return "⚪"
 
 
+def save_themes(client_name: str, content: str):
+    folder = SISTEMA_PATH / "_outputs" / client_name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "04-lista-temas.md").write_text(content, encoding="utf-8")
+
+
+def save_context(client_name: str, mapa: str, proposta: str, personas: str):
+    folder = SISTEMA_PATH / "_outputs" / client_name
+    folder.mkdir(parents=True, exist_ok=True)
+    if mapa:
+        (folder / "01-mapa-empatia.md").write_text(mapa, encoding="utf-8")
+    if proposta:
+        (folder / "02-proposta-valor.md").write_text(proposta, encoding="utf-8")
+    if personas:
+        (folder / "03-personas.md").write_text(personas, encoding="utf-8")
+
+
 # ── Session state ─────────────────────────────────────────────────────────────
 
 defaults = {
@@ -104,6 +126,10 @@ defaults = {
     "generated_caption": "",
     "document_items": [],
     "last_client": "",
+    "pilar_filter": "Todos",
+    "selected_format": "📱 Card Único",
+    "novo_cliente_temas": None,
+    "novo_cliente_temas_raw": "",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -112,251 +138,341 @@ for k, v in defaults.items():
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
-clients = get_clients()
-if not clients:
-    st.error("Nenhum cliente encontrado em `_outputs/`. Execute o fluxo completo primeiro.")
-    st.stop()
-
-top_left, top_mid, top_right = st.columns([3, 5, 2])
-with top_left:
-    st.markdown("### 🎯 Studio de Conteúdo")
-with top_mid:
-    client = st.selectbox(
-        "Cliente",
-        clients,
-        label_visibility="collapsed",
-        key="client_select",
-    )
-with top_right:
-    doc_count = len(st.session_state.document_items)
-    st.markdown(f"<div class='status-bar'>📄 {doc_count} no documento</div>", unsafe_allow_html=True)
-
-# Reset state when client changes
-if client != st.session_state.last_client:
-    st.session_state.selected_theme = None
-    st.session_state.generated_caption = ""
-    st.session_state.last_client = client
-
+st.markdown("### 🎯 Studio de Conteúdo")
 st.divider()
 
-# ── Load data ─────────────────────────────────────────────────────────────────
+# ── Tabs ──────────────────────────────────────────────────────────────────────
 
-themes = parse_themes(client)
-client_context = load_client_context(client)
-guia = load_guia()
+tab_studio, tab_novo = st.tabs(["📋 Gerar Conteúdo", "➕ Novo Cliente"])
 
-if not themes:
-    st.warning(f"Nenhum tema encontrado para **{client}**. Verifique o arquivo `04-lista-temas.md`.")
-    st.stop()
-
-# ── Main layout ───────────────────────────────────────────────────────────────
-
-left, right = st.columns([2, 3], gap="large")
 
 # ════════════════════════════════════════════════════════════
-# LEFT — Theme list
+# TAB 1 — STUDIO (tema + legenda)
 # ════════════════════════════════════════════════════════════
-with left:
-    st.markdown(f"**📋 Temas — {client}** &nbsp; <span style='color:#888;font-size:13px'>{len(themes)} temas</span>", unsafe_allow_html=True)
+with tab_studio:
 
-    # Filters
-    search = st.text_input("🔍", placeholder="Buscar tema...", label_visibility="collapsed")
+    clients = get_clients()
 
-    f1, f2, f3, f4 = st.columns(4)
-    filter_all = f1.button("Todos", use_container_width=True)
-    filter_com = f2.button("🔴 Com.", use_container_width=True)
-    filter_ins = f3.button("🔵 Inst.", use_container_width=True)
-    filter_edu = f4.button("🟢 Edu.", use_container_width=True)
+    if not clients:
+        st.info("Nenhum cliente encontrado. Use a aba **➕ Novo Cliente** para cadastrar.")
+        st.stop()
 
-    if "pilar_filter" not in st.session_state:
-        st.session_state.pilar_filter = "Todos"
-    if filter_all:
-        st.session_state.pilar_filter = "Todos"
-    if filter_com:
-        st.session_state.pilar_filter = "Comercial"
-    if filter_ins:
-        st.session_state.pilar_filter = "Institucional"
-    if filter_edu:
-        st.session_state.pilar_filter = "Educativo"
+    top_left, top_mid, top_right = st.columns([3, 5, 2])
+    with top_left:
+        client = st.selectbox("Cliente", clients, label_visibility="collapsed", key="client_select")
+    with top_right:
+        doc_count = len(st.session_state.document_items)
+        st.markdown(f"<div class='status-bar'>📄 {doc_count} no documento</div>", unsafe_allow_html=True)
 
-    # Apply filters
-    filtered = themes
-    if search:
-        filtered = [t for t in filtered if search.lower() in t["tema"].lower()]
-    if st.session_state.pilar_filter != "Todos":
-        filtered = [t for t in filtered if st.session_state.pilar_filter in t["pilar"]]
+    if client != st.session_state.last_client:
+        st.session_state.selected_theme = None
+        st.session_state.generated_caption = ""
+        st.session_state.last_client = client
 
-    st.caption(f"{len(filtered)} temas exibidos")
+    themes = parse_themes(client)
+    client_context = load_client_context(client)
+    guia = load_guia()
 
-    # Build dataframe for display
-    df = pd.DataFrame([
-        {
+    if not themes:
+        st.warning(f"Nenhum tema encontrado para **{client}**.")
+        st.stop()
+
+    left, right = st.columns([2, 3], gap="large")
+
+    # ── LEFT: theme list ──
+    with left:
+        st.markdown(f"**📋 Temas — {client}** &nbsp; <span style='color:#888;font-size:13px'>{len(themes)} temas</span>", unsafe_allow_html=True)
+
+        search = st.text_input("🔍", placeholder="Buscar tema...", label_visibility="collapsed")
+
+        f1, f2, f3, f4 = st.columns(4)
+        if f1.button("Todos", use_container_width=True):
+            st.session_state.pilar_filter = "Todos"
+        if f2.button("🔴 Com.", use_container_width=True):
+            st.session_state.pilar_filter = "Comercial"
+        if f3.button("🔵 Inst.", use_container_width=True):
+            st.session_state.pilar_filter = "Institucional"
+        if f4.button("🟢 Edu.", use_container_width=True):
+            st.session_state.pilar_filter = "Educativo"
+
+        filtered = themes
+        if search:
+            filtered = [t for t in filtered if search.lower() in t["tema"].lower()]
+        if st.session_state.pilar_filter != "Todos":
+            filtered = [t for t in filtered if st.session_state.pilar_filter in t["pilar"]]
+
+        st.caption(f"{len(filtered)} temas exibidos")
+
+        df = pd.DataFrame([{
             "#": t["num"],
             "Tema": t["tema"],
             "Formato": t["formato"].split("+")[0].strip(),
             "Persona": t["persona"].split("/")[0].strip(),
-        }
-        for t in filtered
-    ])
+        } for t in filtered])
 
-    event = st.dataframe(
-        df,
-        use_container_width=True,
-        height=520,
-        hide_index=True,
-        selection_mode="single-row",
-        on_select="rerun",
-        column_config={
-            "#": st.column_config.TextColumn(width="small"),
-            "Tema": st.column_config.TextColumn(width="large"),
-            "Formato": st.column_config.TextColumn(width="medium"),
-            "Persona": st.column_config.TextColumn(width="medium"),
-        },
-    )
-
-    # Handle row selection
-    if event.selection and event.selection.rows:
-        row_idx = event.selection.rows[0]
-        new_theme = filtered[row_idx]
-        if st.session_state.selected_theme != new_theme:
-            st.session_state.selected_theme = new_theme
-            st.session_state.generated_caption = ""
-
-
-# ════════════════════════════════════════════════════════════
-# RIGHT — Caption generator
-# ════════════════════════════════════════════════════════════
-with right:
-    if not st.session_state.selected_theme:
-        st.markdown("""
-        <div style='text-align:center; padding:80px 0; color:#888'>
-            <div style='font-size:48px'>👈</div>
-            <div style='font-size:18px; margin-top:12px'>Clique em um tema para gerar a legenda</div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        theme = st.session_state.selected_theme
-        emoji = pilar_emoji(theme["pilar"])
-
-        st.markdown(f"#### {emoji} {theme['tema']}")
-
-        meta1, meta2 = st.columns(2)
-        with meta1:
-            st.caption(f"**Pilar:** {theme['pilar']}")
-            st.caption(f"**Persona:** {theme['persona']}")
-        with meta2:
-            st.caption(f"**Formato sugerido:** {theme['formato']}")
-
-        # Format selector
-        st.markdown("**Formato do post:**")
-        fmt_cols = st.columns(5)
-        formats = ["📱 Card Único", "🎠 Carrossel", "🎬 Reels", "📖 Stories", "💰 Tráfego Pago"]
-        if "selected_format" not in st.session_state:
-            st.session_state.selected_format = formats[0]
-
-        for i, fmt in enumerate(formats):
-            if fmt_cols[i].button(fmt, key=f"fmt_{i}", use_container_width=True,
-                                  type="primary" if st.session_state.selected_format == fmt else "secondary"):
-                st.session_state.selected_format = fmt
-                st.session_state.generated_caption = ""
-
-        st.markdown("")
-
-        # Generate button
-        if st.button("⚡ Gerar Legenda", type="primary", use_container_width=True):
-            if not os.getenv("GROQ_API_KEY"):
-                st.error("API Key não configurada. Crie um arquivo `.env` com `ANTHROPIC_API_KEY=sua_chave`.")
-            else:
-                with st.spinner(f"Gerando legenda para **{theme['tema']}** em formato **{st.session_state.selected_format}**..."):
-                    try:
-                        caption = generate_caption(
-                            theme=theme,
-                            formato=st.session_state.selected_format,
-                            client_name=client,
-                            client_context=client_context,
-                            guia=guia,
-                        )
-                        st.session_state.generated_caption = caption
-                    except Exception as e:
-                        st.error(f"Erro ao gerar: {e}")
-
-        # Caption display & editing
-        if st.session_state.generated_caption:
-            st.markdown("---")
-            st.markdown("**📝 Legenda gerada — edite se necessário:**")
-
-            edited = st.text_area(
-                "legenda",
-                value=st.session_state.generated_caption,
-                height=420,
-                label_visibility="collapsed",
-                key="caption_editor",
-            )
-
-            btn_add, btn_regen, btn_clear = st.columns([3, 2, 1])
-
-            with btn_add:
-                if st.button("✅ Adicionar ao documento", type="primary", use_container_width=True):
-                    item = {
-                        "num": len(st.session_state.document_items) + 1,
-                        "tema": theme["tema"],
-                        "pilar": theme["pilar"],
-                        "formato": st.session_state.selected_format,
-                        "conteudo": edited,
-                    }
-                    st.session_state.document_items.append(item)
-                    st.session_state.generated_caption = ""
-                    st.session_state.selected_theme = None
-                    st.success(f"✅ Adicionado! {len(st.session_state.document_items)} conteúdo(s) no documento.")
-                    st.rerun()
-
-            with btn_regen:
-                if st.button("🔄 Regerar", use_container_width=True):
-                    st.session_state.generated_caption = ""
-                    st.rerun()
-
-            with btn_clear:
-                if st.button("🗑️", use_container_width=True, help="Limpar legenda"):
-                    st.session_state.generated_caption = ""
-                    st.rerun()
-
-
-# ════════════════════════════════════════════════════════════
-# BOTTOM — Document section
-# ════════════════════════════════════════════════════════════
-st.divider()
-doc_header, doc_export = st.columns([4, 1])
-
-with doc_header:
-    st.markdown(f"### 📄 Documento — {len(st.session_state.document_items)} conteúdo(s) aprovado(s)")
-
-with doc_export:
-    if st.session_state.document_items:
-        word_bytes = export_to_word(st.session_state.document_items, client)
-        st.download_button(
-            label="⬇️ Exportar Word",
-            data=word_bytes,
-            file_name=f"conteudos-{client.lower()}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            type="primary",
+        event = st.dataframe(
+            df,
             use_container_width=True,
+            height=520,
+            hide_index=True,
+            selection_mode="single-row",
+            on_select="rerun",
+            column_config={
+                "#": st.column_config.TextColumn(width="small"),
+                "Tema": st.column_config.TextColumn(width="large"),
+                "Formato": st.column_config.TextColumn(width="medium"),
+                "Persona": st.column_config.TextColumn(width="medium"),
+            },
         )
 
-if not st.session_state.document_items:
-    st.caption("Nenhum conteúdo aprovado ainda. Gere e adicione conteúdos acima.")
-else:
-    for i, item in enumerate(st.session_state.document_items):
-        with st.expander(
-            f"#{item['num']} &nbsp;|&nbsp; {pilar_emoji(item['pilar'])} {item['pilar']} &nbsp;|&nbsp; {item['tema']} &nbsp;|&nbsp; {item['formato']}",
-            expanded=False,
-        ):
-            col_content, col_remove = st.columns([6, 1])
-            with col_content:
-                st.text(item["conteudo"])
-            with col_remove:
-                if st.button("🗑️ Remover", key=f"remove_{i}", use_container_width=True):
-                    st.session_state.document_items.pop(i)
-                    # Renumber
-                    for j, d in enumerate(st.session_state.document_items):
-                        d["num"] = j + 1
-                    st.rerun()
+        if event.selection and event.selection.rows:
+            row_idx = event.selection.rows[0]
+            new_theme = filtered[row_idx]
+            if st.session_state.selected_theme != new_theme:
+                st.session_state.selected_theme = new_theme
+                st.session_state.generated_caption = ""
+
+    # ── RIGHT: caption generator ──
+    with right:
+        if not st.session_state.selected_theme:
+            st.markdown("""
+            <div style='text-align:center; padding:80px 0; color:#888'>
+                <div style='font-size:48px'>👈</div>
+                <div style='font-size:18px; margin-top:12px'>Clique em um tema para gerar a legenda</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            theme = st.session_state.selected_theme
+            emoji = pilar_emoji(theme["pilar"])
+
+            st.markdown(f"#### {emoji} {theme['tema']}")
+
+            meta1, meta2 = st.columns(2)
+            with meta1:
+                st.caption(f"**Pilar:** {theme['pilar']}")
+                st.caption(f"**Persona:** {theme['persona']}")
+            with meta2:
+                st.caption(f"**Formato sugerido:** {theme['formato']}")
+
+            st.markdown("**Formato do post:**")
+            fmt_cols = st.columns(5)
+            formats = ["📱 Card Único", "🎠 Carrossel", "🎬 Reels", "📖 Stories", "💰 Tráfego Pago"]
+
+            for i, fmt in enumerate(formats):
+                if fmt_cols[i].button(fmt, key=f"fmt_{i}", use_container_width=True,
+                                      type="primary" if st.session_state.selected_format == fmt else "secondary"):
+                    st.session_state.selected_format = fmt
+                    st.session_state.generated_caption = ""
+
+            st.markdown("")
+
+            if st.button("⚡ Gerar Legenda", type="primary", use_container_width=True):
+                if not os.getenv("GROQ_API_KEY"):
+                    st.error("GROQ_API_KEY não configurada.")
+                else:
+                    with st.spinner("Gerando legenda..."):
+                        try:
+                            caption = generate_caption(
+                                theme=theme,
+                                formato=st.session_state.selected_format,
+                                client_name=client,
+                                client_context=client_context,
+                                guia=guia,
+                            )
+                            st.session_state.generated_caption = caption
+                        except Exception as e:
+                            st.error(f"Erro ao gerar: {e}")
+
+            if st.session_state.generated_caption:
+                st.markdown("---")
+                st.markdown("**📝 Legenda gerada — edite se necessário:**")
+
+                edited = st.text_area(
+                    "legenda",
+                    value=st.session_state.generated_caption,
+                    height=420,
+                    label_visibility="collapsed",
+                    key="caption_editor",
+                )
+
+                btn_add, btn_regen, btn_clear = st.columns([3, 2, 1])
+
+                with btn_add:
+                    if st.button("✅ Adicionar ao documento", type="primary", use_container_width=True):
+                        item = {
+                            "num": len(st.session_state.document_items) + 1,
+                            "tema": theme["tema"],
+                            "pilar": theme["pilar"],
+                            "formato": st.session_state.selected_format,
+                            "conteudo": edited,
+                        }
+                        st.session_state.document_items.append(item)
+                        st.session_state.generated_caption = ""
+                        st.session_state.selected_theme = None
+                        st.success(f"✅ Adicionado! {len(st.session_state.document_items)} conteúdo(s) no documento.")
+                        st.rerun()
+
+                with btn_regen:
+                    if st.button("🔄 Regerar", use_container_width=True):
+                        st.session_state.generated_caption = ""
+                        st.rerun()
+
+                with btn_clear:
+                    if st.button("🗑️", use_container_width=True, help="Limpar"):
+                        st.session_state.generated_caption = ""
+                        st.rerun()
+
+    # ── Document section ──
+    st.divider()
+    doc_header, doc_export = st.columns([4, 1])
+
+    with doc_header:
+        st.markdown(f"### 📄 Documento — {len(st.session_state.document_items)} conteúdo(s) aprovado(s)")
+
+    with doc_export:
+        if st.session_state.document_items:
+            word_bytes = export_to_word(st.session_state.document_items, client)
+            st.download_button(
+                label="⬇️ Exportar Word",
+                data=word_bytes,
+                file_name=f"conteudos-{client.lower()}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                type="primary",
+                use_container_width=True,
+            )
+
+    if not st.session_state.document_items:
+        st.caption("Nenhum conteúdo aprovado ainda.")
+    else:
+        for i, item in enumerate(st.session_state.document_items):
+            with st.expander(
+                f"#{item['num']} | {pilar_emoji(item['pilar'])} {item['pilar']} | {item['tema']} | {item['formato']}",
+                expanded=False,
+            ):
+                col_content, col_remove = st.columns([6, 1])
+                with col_content:
+                    st.text(item["conteudo"])
+                with col_remove:
+                    if st.button("🗑️ Remover", key=f"remove_{i}", use_container_width=True):
+                        st.session_state.document_items.pop(i)
+                        for j, d in enumerate(st.session_state.document_items):
+                            d["num"] = j + 1
+                        st.rerun()
+
+
+# ════════════════════════════════════════════════════════════
+# TAB 2 — NOVO CLIENTE
+# ════════════════════════════════════════════════════════════
+with tab_novo:
+    st.markdown("### ➕ Cadastrar Novo Cliente")
+    st.markdown("Preencha os dados estratégicos do cliente e gere a lista de temas automaticamente.")
+    st.divider()
+
+    nome_cliente = st.text_input(
+        "Nome do cliente (sem espaços, ex: JOAO-PADARIA)",
+        placeholder="NOME-DO-CLIENTE",
+    ).upper().strip().replace(" ", "-")
+
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        objetivos = st.text_area(
+            "🎯 Objetivos do cliente",
+            placeholder="Descreva os objetivos principais, campanhas prioritárias, tom de voz, restrições...",
+            height=180,
+        )
+        mapa_empatia = st.text_area(
+            "🧠 Mapa de Empatia",
+            placeholder="Cole aqui o mapa de empatia completo...",
+            height=250,
+        )
+
+    with col_b:
+        proposta_valor = st.text_area(
+            "💎 Proposta de Valor",
+            placeholder="Cole aqui a proposta de valor completa...",
+            height=200,
+        )
+        personas = st.text_area(
+            "👤 Personas",
+            placeholder="Cole aqui as personas completas...",
+            height=230,
+        )
+
+    st.divider()
+
+    if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True):
+        if not nome_cliente:
+            st.error("Preencha o nome do cliente.")
+        elif not any([objetivos, mapa_empatia, proposta_valor, personas]):
+            st.error("Preencha pelo menos um dos campos estratégicos.")
+        elif not os.getenv("GROQ_API_KEY"):
+            st.error("GROQ_API_KEY não configurada.")
+        else:
+            with st.spinner("Gerando 350 temas... isso pode levar 30 a 60 segundos..."):
+                try:
+                    raw = generate_themes(
+                        client_name=nome_cliente,
+                        mapa_empatia=mapa_empatia,
+                        proposta_valor=proposta_valor,
+                        personas=personas,
+                        objetivos=objetivos,
+                    )
+                    temas_parsed = parse_themes_from_text(raw)
+                    st.session_state.novo_cliente_temas = temas_parsed
+                    st.session_state.novo_cliente_temas_raw = raw
+                except Exception as e:
+                    st.error(f"Erro ao gerar temas: {e}")
+
+    # Show generated themes for approval
+    if st.session_state.novo_cliente_temas:
+        temas = st.session_state.novo_cliente_temas
+        st.success(f"✅ {len(temas)} temas gerados para **{nome_cliente}**! Revise abaixo e confirme.")
+
+        df_preview = pd.DataFrame([{
+            "#": t["num"],
+            "Pilar": t["pilar"],
+            "Tema": t["tema"],
+            "Formato": t["formato"],
+            "Persona": t["persona"],
+        } for t in temas])
+
+        st.dataframe(df_preview, use_container_width=True, height=400, hide_index=True)
+
+        st.markdown("**Distribuição:**")
+        comercial = sum(1 for t in temas if "Comercial" in t["pilar"])
+        institucional = sum(1 for t in temas if "Institucional" in t["pilar"])
+        educativo = sum(1 for t in temas if "Educativo" in t["pilar"])
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🔴 Comercial", comercial)
+        c2.metric("🔵 Institucional", institucional)
+        c3.metric("🟢 Educativo", educativo)
+
+        st.divider()
+        st.markdown("**Confirmar e salvar este cliente?**")
+        col_ok, col_cancel = st.columns([2, 1])
+
+        with col_ok:
+            if st.button("✅ Confirmar e usar no Studio", type="primary", use_container_width=True):
+                if not nome_cliente:
+                    st.error("Nome do cliente em branco.")
+                else:
+                    header = f"# LISTA DE TEMAS — {nome_cliente}\n\n"
+                    header += "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n"
+                    header += "|---|---|---|---|---|\n"
+                    full_content = header + "\n".join(
+                        f"| {t['num']} | {t['pilar']} | {t['tema']} | {t['formato']} | {t['persona']} |"
+                        for t in temas
+                    )
+                    save_themes(nome_cliente, full_content)
+                    save_context(nome_cliente, mapa_empatia, proposta_valor, personas)
+                    st.session_state.novo_cliente_temas = None
+                    st.session_state.novo_cliente_temas_raw = ""
+                    st.success(f"✅ Cliente **{nome_cliente}** salvo! Vá para a aba **📋 Gerar Conteúdo** e selecione-o.")
+                    st.balloons()
+
+        with col_cancel:
+            if st.button("🔄 Regerar temas", use_container_width=True):
+                st.session_state.novo_cliente_temas = None
+                st.session_state.novo_cliente_temas_raw = ""
+                st.rerun()

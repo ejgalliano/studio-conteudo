@@ -2,12 +2,66 @@ from groq import Groq
 import os
 
 
-def generate_caption(theme: dict, formato: str, client_name: str, client_context: dict, guia: str) -> str:
+def _groq_client():
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY não encontrada. Verifique o arquivo .env")
+    return Groq(api_key=api_key)
 
-    client = Groq(api_key=api_key)
+
+def generate_themes(client_name: str, mapa_empatia: str, proposta_valor: str, personas: str, objetivos: str) -> str:
+    client = _groq_client()
+
+    prompt = f"""Você é um estrategista de marketing digital sênior. Com base nos documentos estratégicos do cliente abaixo, gere uma lista de 350 temas de conteúdo para redes sociais.
+
+## CLIENTE: {client_name}
+
+## OBJETIVOS:
+{objetivos}
+
+## MAPA DE EMPATIA:
+{mapa_empatia}
+
+## PROPOSTA DE VALOR:
+{proposta_valor}
+
+## PERSONAS:
+{personas}
+
+## INSTRUÇÕES:
+Gere exatamente 350 temas distribuídos assim:
+- 🔴 COMERCIAL (30% = ~105 temas): venda direta, produtos, ofertas, captação, depoimentos, provas sociais
+- 🔵 INSTITUCIONAL (30% = ~105 temas): história, bastidores, valores, equipe, credibilidade, posicionamento
+- 🟢 EDUCATIVO (40% = ~140 temas): dicas práticas, dúvidas frequentes, mitos e verdades, tutoriais, tendências
+
+## FORMATO OBRIGATÓRIO (tabela markdown):
+Retorne APENAS a tabela, sem texto antes ou depois. Use exatamente este formato:
+
+| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |
+|---|---|---|---|---|
+| 001 | 🔴 Comercial | [tema] | [Card único / Carrossel / Reels / Stories / Tráfego Pago] | [persona] |
+| 002 | 🔵 Institucional | [tema] | [formato] | [persona] |
+| 003 | 🟢 Educativo | [tema] | [formato] | [persona] |
+
+Regras:
+- Temas concretos, específicos e acionáveis — não genéricos
+- Varie os formatos sugeridos entre os 5 tipos
+- Persona-alvo baseada nas personas fornecidas
+- Numere de 001 até 350
+- Escreva em português brasileiro"""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=8000,
+        temperature=0.8,
+    )
+
+    return response.choices[0].message.content
+
+
+def generate_caption(theme: dict, formato: str, client_name: str, client_context: dict, guia: str) -> str:
+    client = _groq_client()
 
     formato_clean = formato.split(" ", 1)[1] if " " in formato else formato
 
