@@ -407,14 +407,19 @@ with tab_novo:
             if st.button("🤖 Extrair Objetivos", use_container_width=True, type="primary"):
                 with st.spinner("Lendo a transcrição e extraindo objetivos..."):
                     try:
-                        st.session_state.objetivos_extraidos = extract_objectives(transcricao_texto)
+                        resultado = extract_objectives(transcricao_texto)
+                        st.session_state.objetivos_extraidos = resultado
+                        # Força atualização do campo de texto
+                        if "objetivos_editor" in st.session_state:
+                            del st.session_state["objetivos_editor"]
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao extrair objetivos: {e}")
 
     st.markdown("#### 🎯 Objetivos do Cliente")
     objetivos = st.text_area(
         "objetivos",
-        value=st.session_state.objetivos_extraidos,
+        value=st.session_state.get("objetivos_extraidos", ""),
         placeholder="Clique em 'Extrair Objetivos' após carregar a transcrição, ou escreva manualmente...",
         height=220,
         label_visibility="collapsed",
