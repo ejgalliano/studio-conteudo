@@ -357,10 +357,11 @@ with tab_studio:
 
         st.caption(f"{len(filtered)} temas exibidos")
 
+        used_nums = {item.get("theme_num") for item in st.session_state.document_items}
         df = pd.DataFrame([{
             "#": t["num"],
             "Pilar": pilar_emoji(t["pilar"]),
-            "Tema": t["tema"],
+            "Tema": ("✅ " if t["num"] in used_nums else "") + t["tema"],
         } for t in filtered])
 
         event = st.dataframe(
@@ -453,6 +454,7 @@ with tab_studio:
                     if st.button("✅ Adicionar ao documento", type="primary", use_container_width=True):
                         item = {
                             "num": len(st.session_state.document_items) + 1,
+                            "theme_num": theme["num"],
                             "tema": theme["tema"],
                             "pilar": theme["pilar"],
                             "formato": st.session_state.selected_format,
