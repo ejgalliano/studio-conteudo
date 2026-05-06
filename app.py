@@ -261,7 +261,7 @@ with tab_studio:
         st.warning(f"Nenhum tema encontrado para **{client}**.")
         st.stop()
 
-    left, right = st.columns([2, 3], gap="large")
+    left, right = st.columns([2, 2.5], gap="large")
 
     # ── LEFT: theme list ──
     with left:
@@ -289,23 +289,21 @@ with tab_studio:
 
         df = pd.DataFrame([{
             "#": t["num"],
+            "Pilar": pilar_emoji(t["pilar"]),
             "Tema": t["tema"],
-            "Formato": t["formato"].split("+")[0].strip(),
-            "Persona": t["persona"].split("/")[0].strip(),
         } for t in filtered])
 
         event = st.dataframe(
             df,
             use_container_width=True,
-            height=520,
+            height=540,
             hide_index=True,
             selection_mode="single-row",
             on_select="rerun",
             column_config={
-                "#": st.column_config.TextColumn(width="small"),
-                "Tema": st.column_config.TextColumn(width="large"),
-                "Formato": st.column_config.TextColumn(width="medium"),
-                "Persona": st.column_config.TextColumn(width="medium"),
+                "#":     st.column_config.TextColumn(width=40),
+                "Pilar": st.column_config.TextColumn(width=40),
+                "Tema":  st.column_config.TextColumn(width="large"),
             },
         )
 
