@@ -96,7 +96,9 @@ def _generate_themes_batch(client, context: str, pilar: str, emoji: str, quantid
 {context}
 
 ## INSTRUÇÕES:
-Gere exatamente {quantidade} temas do pilar {emoji} {pilar}.
+Gere exatamente {quantidade} temas DIFERENTES e ÚNICOS do pilar {emoji} {pilar}.
+NUNCA repita o mesmo tema ou variação mínima do mesmo tema.
+Cada tema deve abordar um ângulo diferente — produto, cliente, situação, dor, solução, resultado.
 Temas concretos, específicos e acionáveis — não genéricos.
 Varie os formatos: Card único, Carrossel, Reels, Stories, Tráfego Pago.
 Persona-alvo baseada nas personas fornecidas.
@@ -122,14 +124,21 @@ def generate_themes(client_name: str, mapa_empatia: str, proposta_valor: str, pe
     ]
 
     all_rows = []
+    seen_themes = set()  # deduplicação global entre todos os lotes
+
     for pilar, emoji, qtd, inicio in batches:
         if progress_callback:
             progress_callback(pilar)
         result = _generate_themes_batch(client, context, pilar, emoji, qtd, inicio)
-        # Extract only table rows
         for line in result.splitlines():
             if line.startswith("|") and not line.startswith("| Nº") and not line.startswith("|---"):
-                all_rows.append(line)
+                # Extrai o texto do tema (coluna 3) para verificar duplicata
+                parts = [p.strip() for p in line.split("|")[1:-1]]
+                if len(parts) >= 3:
+                    tema_normalizado = parts[2].lower().strip()
+                    if tema_normalizado and tema_normalizado not in seen_themes:
+                        seen_themes.add(tema_normalizado)
+                        all_rows.append(line)
 
     header = "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n|---|---|---|---|---|\n"
     return header + "\n".join(all_rows)
