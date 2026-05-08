@@ -43,6 +43,8 @@ def get_clients() -> list[str]:
                 clients.add(d.name)
     # Clientes criados nesta sessão
     clients.update(st.session_state.get("session_clients", {}).keys())
+    # Remove clientes apagados nesta sessão (antes do GitHub/disco sincronizarem)
+    clients -= st.session_state.get("deleted_clients", set())
     return sorted(clients)
 
 
@@ -243,6 +245,7 @@ defaults = {
     "objetivos_extraidos": "",
     "session_clients": {},  # {nome: {"themes": [...], "context": {}}}
     "confirm_delete_client": "",
+    "deleted_clients": set(),  # clientes apagados nesta sessão — ocultos imediatamente
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -304,6 +307,8 @@ with tab_studio:
             if st.button("✅ Sim, apagar", type="primary", use_container_width=True, key="confirm_del_yes"):
                 with st.spinner("Apagando cliente..."):
                     ok, msg = delete_client(client)
+                # Marca como apagado imediatamente na sessão
+                st.session_state.deleted_clients.add(client)
                 st.session_state.confirm_delete_client = ""
                 st.session_state.selected_theme = None
                 st.session_state.generated_caption = ""
