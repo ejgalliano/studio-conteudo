@@ -117,22 +117,35 @@ def generate_themes(client_name: str, mapa_empatia: str, proposta_valor: str, pe
     client = _groq_client()
     context = _build_context(client_name, mapa_empatia, proposta_valor, personas, objetivos)
 
+    # Sub-lotes de 35 temas — garante que max_tokens=4000 é suficiente para cada chamada
+    # 3 lotes × 35 = 105 Comercial | 3 × 35 = 105 Institucional | 4 × 35 = 140 Educativo
     batches = [
-        ("Comercial",     "🔴", 105,  1),
-        ("Institucional", "🔵", 105, 106),
-        ("Educativo",     "🟢", 140, 211),
+        ("Comercial",     "🔴",  35,   1),
+        ("Comercial",     "🔴",  35,  36),
+        ("Comercial",     "🔴",  35,  71),
+        ("Institucional", "🔵",  35, 106),
+        ("Institucional", "🔵",  35, 141),
+        ("Institucional", "🔵",  35, 176),
+        ("Educativo",     "🟢",  35, 211),
+        ("Educativo",     "🟢",  35, 246),
+        ("Educativo",     "🟢",  35, 281),
+        ("Educativo",     "🟢",  35, 316),
     ]
 
     all_rows = []
-    seen_themes = set()  # deduplicação global entre todos os lotes
+    seen_themes = set()
+    current_pilar = None
 
     for pilar, emoji, qtd, inicio in batches:
-        if progress_callback:
-            progress_callback(pilar)
+        # Dispara callback só quando muda de pilar
+        if pilar != current_pilar:
+            if progress_callback:
+                progress_callback(pilar)
+            current_pilar = pilar
+
         result = _generate_themes_batch(client, context, pilar, emoji, qtd, inicio)
         for line in result.splitlines():
             if line.startswith("|") and not line.startswith("| Nº") and not line.startswith("|---"):
-                # Extrai o texto do tema (coluna 3) para verificar duplicata
                 parts = [p.strip() for p in line.split("|")[1:-1]]
                 if len(parts) >= 3:
                     tema_normalizado = parts[2].lower().strip()

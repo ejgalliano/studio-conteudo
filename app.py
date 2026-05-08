@@ -718,7 +718,7 @@ with tab_novo:
         elif not os.getenv("GROQ_API_KEY"):
             st.error("GROQ_API_KEY não configurada.")
         else:
-            st.info("Gerando temas em 3 etapas. Cada etapa leva ~20–30 segundos. Total estimado: 1–2 minutos.")
+            st.info("Gerando 350 temas em 10 sub-lotes (35 por chamada). Total estimado: 3–5 minutos. Não feche esta aba.")
             progress = st.progress(0, text="Iniciando...")
             status = st.empty()
 
