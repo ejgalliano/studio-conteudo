@@ -300,6 +300,7 @@ defaults = {
     "session_clients": {},  # {nome: {"themes": [...], "context": {}}}
     "confirm_delete_client": "",
     "deleted_clients": set(),  # clientes apagados nesta sessão — ocultos imediatamente
+    "goto_novo_cliente": "",   # pré-preenche o nome ao redirecionar para Novo Cliente
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -343,7 +344,7 @@ with tab_studio:
             st.session_state.selected_theme = None
             st.session_state.generated_caption = ""
             st.session_state.confirm_delete_client = ""
-            st.success(f"Temas de **{client}** resetados. Vá para **➕ Novo Cliente** para gerar novas ideias.")
+            st.session_state.goto_novo_cliente = client   # pré-preenche e redireciona
             st.rerun()
     with top_del:
         if st.button("🗑️", use_container_width=True, help="Apagar este cliente permanentemente"):
@@ -609,6 +610,19 @@ with tab_studio:
 # TAB 2 — NOVO CLIENTE
 # ════════════════════════════════════════════════════════════
 with tab_novo:
+    # Redireciona automaticamente para esta aba após "Resetar temas"
+    _goto = st.session_state.get("goto_novo_cliente", "")
+    if _goto:
+        st.markdown(f"""
+        <script>
+        setTimeout(function() {{
+            const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+            if (tabs.length > 1) tabs[1].click();
+        }}, 200);
+        </script>
+        """, unsafe_allow_html=True)
+        st.info(f"✅ Temas de **{_goto}** resetados. Recarregue os documentos e clique em **⚡ Gerar Lista de Temas** para criar novas ideias.")
+
     st.markdown("### ➕ Cadastrar Novo Cliente")
     st.markdown("Faça upload da transcrição do briefing — a IA extrai os objetivos automaticamente. Complemente com os demais documentos se tiver.")
     st.divider()
@@ -616,7 +630,12 @@ with tab_novo:
     nome_cliente = st.text_input(
         "Nome do cliente (sem espaços, ex: JOAO-PADARIA)",
         placeholder="NOME-DO-CLIENTE",
+        value=_goto,  # pré-preenche com o nome do cliente resetado
     ).upper().strip().replace(" ", "-")
+
+    # Limpa o redirecionamento depois de exibir
+    if _goto:
+        st.session_state.goto_novo_cliente = ""
 
     st.markdown("#### 📝 Transcrição do Briefing")
     st.caption("Aceita **.txt**, **.docx** ou **.pdf** — o conteúdo é o que importa")
