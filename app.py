@@ -34,17 +34,24 @@ st.markdown("""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=60)
+def _fetch_deleted_clients() -> frozenset:
+    """Cache the deleted list for 60s to avoid hitting GitHub API on every rerun."""
+    return frozenset(get_deleted_clients_github())
+
+
 def get_clients() -> list[str]:
     clients = set()
     outputs = SISTEMA_PATH / "_outputs"
     if outputs.exists():
         for d in outputs.iterdir():
-            if d.is_dir():
+            if d.is_dir() and not d.name.startswith("_"):
                 clients.add(d.name)
     # Clientes criados nesta sessão
     clients.update(st.session_state.get("session_clients", {}).keys())
-    # Remove clientes apagados nesta sessão (antes do GitHub/disco sincronizarem)
-    clients -= st.session_state.get("deleted_clients", set())
+    # Remove apagados: sessão atual + lista persistente do GitHub
+    deleted = st.session_state.get("deleted_clients", set()) | _fetch_deleted_clients()
+    clients -= deleted
     return sorted(clients)
 
 
@@ -155,8 +162,58 @@ def save_to_github(client_name: str, files: dict) -> tuple[bool, str]:
     return True, "ok"
 
 
+def _github_headers() -> dict:
+    token = os.getenv("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
+    if not token:
+        return {}
+    return {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+
+GITHUB_REPO = "ejgalliano/studio-conteudo"
+DELETED_FILE = "_outputs/_deleted.txt"
+
+
+def get_deleted_clients_github() -> set:
+    """Fetch the persistent deleted-clients list from GitHub."""
+    headers = _github_headers()
+    if not headers:
+        return set()
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DELETED_FILE}"
+    resp = requests.get(url, headers=headers)
+    if resp.status_code == 200:
+        content = base64.b64decode(resp.json()["content"]).decode("utf-8")
+        return {line.strip() for line in content.splitlines() if line.strip()}
+    return set()
+
+
+def add_to_deleted_list_github(client_name: str):
+    """Append client to the persistent deleted list in GitHub."""
+    headers = _github_headers()
+    if not headers:
+        return
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DELETED_FILE}"
+    # Read existing list
+    existing = set()
+    sha = None
+    resp = requests.get(url, headers=headers)
+    if resp.status_code == 200:
+        existing = {line.strip() for line in base64.b64decode(resp.json()["content"]).decode("utf-8").splitlines() if line.strip()}
+        sha = resp.json()["sha"]
+    existing.add(client_name)
+    new_content = "\n".join(sorted(existing)) + "\n"
+    data = {
+        "message": f"chore: marca {client_name} como apagado",
+        "content": base64.b64encode(new_content.encode("utf-8")).decode(),
+    }
+    if sha:
+        data["sha"] = sha
+    requests.put(url, json=data, headers=headers)
+
+
 def delete_client(client_name: str) -> tuple[bool, str]:
-    """Remove client from session state, disk, and GitHub."""
+    """Remove client from session, disk, GitHub files, and add to deleted list."""
     # Remove from session
     session = st.session_state.get("session_clients", {})
     if client_name in session:
@@ -168,17 +225,15 @@ def delete_client(client_name: str) -> tuple[bool, str]:
     if client_path.exists():
         try:
             shutil.rmtree(client_path)
-        except Exception as e:
-            return False, f"Erro ao apagar pasta local: {e}"
+        except Exception:
+            pass  # Cloud filesystem pode ser read-only
 
-    # Remove from GitHub
-    token = os.getenv("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
-    if token:
-        repo = "ejgalliano/studio-conteudo"
-        headers = {
-            "Authorization": f"token {token}",
-            "Accept": "application/vnd.github.v3+json",
-        }
+    # Add to persistent deleted list in GitHub FIRST (garante que some mesmo se os arquivos ainda existirem)
+    add_to_deleted_list_github(client_name)
+
+    # Delete individual files from GitHub
+    headers = _github_headers()
+    if headers:
         files_to_delete = [
             f"_outputs/{client_name}/04-lista-temas.md",
             f"_outputs/{client_name}/01-mapa-empatia.md",
@@ -186,13 +241,12 @@ def delete_client(client_name: str) -> tuple[bool, str]:
             f"_outputs/{client_name}/03-personas.md",
         ]
         for file_path in files_to_delete:
-            url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{file_path}"
             get_resp = requests.get(url, headers=headers)
             if get_resp.status_code == 200:
-                sha = get_resp.json()["sha"]
                 requests.delete(url, headers=headers, json={
                     "message": f"chore: remove cliente {client_name}",
-                    "sha": sha,
+                    "sha": get_resp.json()["sha"],
                 })
 
     return True, "ok"
@@ -307,8 +361,9 @@ with tab_studio:
             if st.button("✅ Sim, apagar", type="primary", use_container_width=True, key="confirm_del_yes"):
                 with st.spinner("Apagando cliente..."):
                     ok, msg = delete_client(client)
-                # Marca como apagado imediatamente na sessão
+                # Marca como apagado imediatamente na sessão e limpa cache
                 st.session_state.deleted_clients.add(client)
+                _fetch_deleted_clients.clear()
                 st.session_state.confirm_delete_client = ""
                 st.session_state.selected_theme = None
                 st.session_state.generated_caption = ""
