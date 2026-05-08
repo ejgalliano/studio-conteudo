@@ -537,28 +537,31 @@ with tab_studio:
 
                 # ── Ajuste com IA ──
                 st.markdown("**✏️ Ajustar com IA:**")
-                adj_col, btn_col = st.columns([5, 1])
-                with adj_col:
-                    ajuste_texto = st.text_input(
-                        "ajuste",
-                        placeholder='Ex: "Deixe mais curto", "Tom mais descontraído", "Troque o CTA por WhatsApp"...',
-                        label_visibility="collapsed",
-                        key="ajuste_instrucao",
-                    )
-                with btn_col:
-                    if st.button("Ajustar", use_container_width=True, type="secondary"):
-                        if ajuste_texto.strip():
-                            with st.spinner("Ajustando..."):
-                                try:
-                                    refinado = refine_caption(edited, ajuste_texto.strip())
-                                    st.session_state.generated_caption = refinado
-                                    st.session_state["ajuste_instrucao"] = ""
-                                    st.session_state["_refresh_caption"] = True  # sinaliza para limpar key no próximo render
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao ajustar: {e}")
-                        else:
-                            st.warning("Digite uma instrução de ajuste primeiro.")
+
+                # Limpa o campo de ajuste ANTES de renderizar (mesmo padrão do caption_editor)
+                if st.session_state.pop("_clear_ajuste", False):
+                    st.session_state.pop("ajuste_instrucao", None)
+
+                ajuste_texto = st.text_area(
+                    "ajuste",
+                    placeholder='Descreva os ajustes: ex. "Tom mais descontraído", "Troque o CTA por WhatsApp", "Foque nos bairros: Vila Souza, Vila Carvalho"...',
+                    label_visibility="collapsed",
+                    height=100,
+                    key="ajuste_instrucao",
+                )
+                if st.button("✏️ Ajustar com IA", use_container_width=True, type="secondary"):
+                    if ajuste_texto.strip():
+                        with st.spinner("Ajustando..."):
+                            try:
+                                refinado = refine_caption(edited, ajuste_texto.strip())
+                                st.session_state.generated_caption = refinado
+                                st.session_state["_refresh_caption"] = True
+                                st.session_state["_clear_ajuste"] = True
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao ajustar: {e}")
+                    else:
+                        st.warning("Digite uma instrução de ajuste primeiro.")
 
                 st.markdown("")
                 btn_add, btn_regen, btn_clear = st.columns([3, 2, 1])
