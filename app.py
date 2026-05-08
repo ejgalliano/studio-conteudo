@@ -500,6 +500,11 @@ with tab_studio:
                 st.markdown("---")
                 st.markdown("**📝 Legenda gerada — edite se necessário:**")
 
+                # Se há uma atualização pendente (pós-refinamento), limpa a chave
+                # ANTES do widget ser renderizado, para ele usar o novo value=
+                if st.session_state.pop("_refresh_caption", False):
+                    st.session_state.pop("caption_editor", None)
+
                 edited = st.text_area(
                     "legenda",
                     value=st.session_state.generated_caption,
@@ -525,8 +530,8 @@ with tab_studio:
                                 try:
                                     refinado = refine_caption(edited, ajuste_texto.strip())
                                     st.session_state.generated_caption = refinado
-                                    st.session_state["caption_editor"] = refinado  # força o text_area a atualizar
-                                    st.session_state["ajuste_instrucao"] = ""  # limpa o campo de instrução
+                                    st.session_state["ajuste_instrucao"] = ""
+                                    st.session_state["_refresh_caption"] = True  # sinaliza para limpar key no próximo render
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao ajustar: {e}")
