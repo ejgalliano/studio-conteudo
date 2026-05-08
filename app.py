@@ -537,26 +537,22 @@ with tab_studio:
 
                 # ── Ajuste com IA ──
                 st.markdown("**✏️ Ajustar com IA:**")
+                with st.form("form_ajuste", clear_on_submit=True):
+                    ajuste_texto = st.text_area(
+                        "ajuste",
+                        placeholder='Descreva os ajustes: ex. "Tom mais descontraído", "Troque o CTA por WhatsApp", "Foque nos bairros: Vila Souza, Vila Carvalho"...',
+                        label_visibility="collapsed",
+                        height=100,
+                    )
+                    submitted = st.form_submit_button("✏️ Ajustar com IA", use_container_width=True, type="secondary")
 
-                # Limpa o campo de ajuste ANTES de renderizar (mesmo padrão do caption_editor)
-                if st.session_state.pop("_clear_ajuste", False):
-                    st.session_state.pop("ajuste_instrucao", None)
-
-                ajuste_texto = st.text_area(
-                    "ajuste",
-                    placeholder='Descreva os ajustes: ex. "Tom mais descontraído", "Troque o CTA por WhatsApp", "Foque nos bairros: Vila Souza, Vila Carvalho"...',
-                    label_visibility="collapsed",
-                    height=100,
-                    key="ajuste_instrucao",
-                )
-                if st.button("✏️ Ajustar com IA", use_container_width=True, type="secondary"):
+                if submitted:
                     if ajuste_texto.strip():
                         with st.spinner("Ajustando..."):
                             try:
                                 refinado = refine_caption(edited, ajuste_texto.strip())
                                 st.session_state.generated_caption = refinado
                                 st.session_state["_refresh_caption"] = True
-                                st.session_state["_clear_ajuste"] = True
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao ajustar: {e}")
