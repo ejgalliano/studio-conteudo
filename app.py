@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from generator import generate_caption, generate_themes, extract_objectives
+from generator import generate_caption, generate_themes, extract_objectives, refine_caption
 from exporter import export_to_word
 
 load_dotenv()
@@ -453,6 +453,30 @@ with tab_studio:
                     key="caption_editor",
                 )
 
+                # ── Ajuste com IA ──
+                st.markdown("**✏️ Ajustar com IA:**")
+                adj_col, btn_col = st.columns([5, 1])
+                with adj_col:
+                    ajuste_texto = st.text_input(
+                        "ajuste",
+                        placeholder='Ex: "Deixe mais curto", "Tom mais descontraído", "Troque o CTA por WhatsApp"...',
+                        label_visibility="collapsed",
+                        key="ajuste_instrucao",
+                    )
+                with btn_col:
+                    if st.button("Ajustar", use_container_width=True, type="secondary"):
+                        if ajuste_texto.strip():
+                            with st.spinner("Ajustando..."):
+                                try:
+                                    refinado = refine_caption(edited, ajuste_texto.strip())
+                                    st.session_state.generated_caption = refinado
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao ajustar: {e}")
+                        else:
+                            st.warning("Digite uma instrução de ajuste primeiro.")
+
+                st.markdown("")
                 btn_add, btn_regen, btn_clear = st.columns([3, 2, 1])
 
                 with btn_add:

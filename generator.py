@@ -187,3 +187,23 @@ Escreva em português brasileiro. Tom: profissional, acessível, direto ao ponto
 Reflita o tom de voz do cliente (confiante, experiente, próximo — nunca corporativo)."""
 
     return _chat_with_fallback(client, [{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.7)
+
+
+def refine_caption(caption: str, instrucoes: str) -> str:
+    client = _groq_client()
+    prompt = f"""Você é um especialista em copywriting para redes sociais.
+Abaixo está um conteúdo já criado para um post. O cliente pediu os seguintes ajustes:
+
+## AJUSTES SOLICITADOS:
+{instrucoes}
+
+## CONTEÚDO ATUAL:
+{caption}
+
+## INSTRUÇÕES:
+- Aplique APENAS os ajustes solicitados. Não mude o que não foi pedido.
+- Mantenha o mesmo formato e estrutura do conteúdo original.
+- Escreva em português brasileiro.
+- Retorne o conteúdo completo já corrigido, sem comentários adicionais."""
+
+    return _chat_with_fallback(client, [{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.5)
