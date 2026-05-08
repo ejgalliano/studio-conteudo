@@ -470,6 +470,8 @@ with tab_studio:
                                 try:
                                     refinado = refine_caption(edited, ajuste_texto.strip())
                                     st.session_state.generated_caption = refinado
+                                    st.session_state["caption_editor"] = refinado  # força o text_area a atualizar
+                                    st.session_state["ajuste_instrucao"] = ""  # limpa o campo de instrução
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao ajustar: {e}")
