@@ -212,6 +212,27 @@ def add_to_deleted_list_github(client_name: str):
     requests.put(url, json=data, headers=headers)
 
 
+def remove_from_deleted_list_github(client_name: str):
+    """Remove client from the persistent deleted list so it can be recreated."""
+    headers = _github_headers()
+    if not headers:
+        return
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DELETED_FILE}"
+    resp = requests.get(url, headers=headers)
+    if resp.status_code != 200:
+        return
+    existing = {line.strip() for line in base64.b64decode(resp.json()["content"]).decode("utf-8").splitlines() if line.strip()}
+    sha = resp.json()["sha"]
+    existing.discard(client_name)
+    new_content = "\n".join(sorted(existing)) + "\n"
+    data = {
+        "message": f"chore: reativa cliente {client_name}",
+        "content": base64.b64encode(new_content.encode("utf-8")).decode(),
+        "sha": sha,
+    }
+    requests.put(url, json=data, headers=headers)
+
+
 def delete_client(client_name: str) -> tuple[bool, str]:
     """Remove client from session, disk, GitHub files, and add to deleted list."""
     # Remove from session
@@ -760,6 +781,12 @@ with tab_novo:
                 if not nome_cliente:
                     st.error("Nome do cliente em branco.")
                 else:
+                    # Se o cliente estava na lista negra (apagado antes), remove de lá
+                    if nome_cliente in st.session_state.get("deleted_clients", set()):
+                        st.session_state["deleted_clients"].discard(nome_cliente)
+                    remove_from_deleted_list_github(nome_cliente)
+                    _fetch_deleted_clients.clear()
+
                     # Salva na sessão atual (disponível imediatamente)
                     st.session_state["session_clients"][nome_cliente] = {
                         "themes": temas,
