@@ -1,5 +1,4 @@
 import io
-import json
 import os
 import streamlit as st
 import pandas as pd
@@ -99,18 +98,10 @@ def load_guia() -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def copy_button(text: str, key: str = "copy"):
-    escaped = json.dumps(text)
-    st.markdown(f"""
-    <button id="btn_{key}"
-      onclick="navigator.clipboard.writeText({escaped})
-               .then(()=>{{document.getElementById('btn_{key}').innerText='✅ Copiado!';
-                           setTimeout(()=>document.getElementById('btn_{key}').innerText='📋 Copiar legenda',2000)}})
-               .catch(()=>{{}})"
-      style="background:#27ae60;color:white;border:none;padding:7px 18px;
-             border-radius:6px;cursor:pointer;font-size:14px;margin-bottom:8px">
-      📋 Copiar legenda
-    </button>""", unsafe_allow_html=True)
+def copy_section(text: str):
+    """Mostra o texto em bloco de código com botão de cópia nativo do Streamlit."""
+    st.caption("📋 Copiar legenda — clique no ícone no canto do campo abaixo:")
+    st.code(text, language=None)
 
 
 # ── Cached GitHub ─────────────────────────────────────────────────────────────
@@ -570,8 +561,8 @@ if S.selected_theme:
             key=f"cap_v{S.caption_key}",
         )
 
-        # Copy button
-        copy_button(edited, key=f"cp_{S.caption_key}")
+        # Copy section
+        copy_section(edited)
 
         # ── AI refinement ──
         st.markdown("**Ajustar com IA:**")
