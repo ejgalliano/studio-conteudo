@@ -1,20 +1,27 @@
+import io
+import os
 import streamlit as st
 import pandas as pd
-import os
-import io
-import base64
-import requests
 from pathlib import Path
 from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from generator import generate_caption, generate_themes, extract_objectives, refine_caption
+from constants import FORMATS, PILAR_EMOJI, THEME_BATCHES
+from generator import extract_objectives, generate_themes, generate_caption, refine_caption
+from github_api import (
+    get_deleted_clients, add_to_deleted, remove_from_deleted,
+    save_client, delete_client as gh_delete_client,
+    load_client_context, load_client_themes_raw,
+)
 from exporter import export_to_word
 
 load_dotenv()
 
 SISTEMA_PATH = Path(__file__).parent
+OUTPUTS_PATH = SISTEMA_PATH / "_outputs"
+
+# ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
     page_title="Studio de Conteúdo",
@@ -25,94 +32,59 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .block-container { padding-top: 1rem; }
-    div[data-testid="stDataFrame"] { border-radius: 8px; }
-    .status-bar { background:#1e1e2e; color:#cdd6f4; border-radius:8px; padding:10px 16px; font-family:monospace; font-size:13px; }
+  .block-container { padding-top: 1rem; }
+  div[data-testid="stDataFrame"] { border-radius: 8px; }
+  .status-pill {
+    background: #1e1e2e; color: #cdd6f4;
+    border-radius: 8px; padding: 8px 14px;
+    font-family: monospace; font-size: 13px;
+    text-align: center;
+  }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=60)
-def _fetch_deleted_clients() -> frozenset:
-    """Cache the deleted list for 60s to avoid hitting GitHub API on every rerun."""
-    return frozenset(get_deleted_clients_github())
+def pilar_emoji(pilar: str) -> str:
+    for key, emoji in PILAR_EMOJI.items():
+        if key in pilar:
+            return emoji
+    return "⚪"
 
 
-def get_clients() -> list[str]:
-    clients = set()
-    outputs = SISTEMA_PATH / "_outputs"
-    if outputs.exists():
-        for d in outputs.iterdir():
-            if d.is_dir() and not d.name.startswith("_"):
-                clients.add(d.name)
-    # Clientes criados nesta sessão
-    clients.update(st.session_state.get("session_clients", {}).keys())
-    # Remove apagados: sessão atual + lista persistente do GitHub
-    deleted = st.session_state.get("deleted_clients", set()) | _fetch_deleted_clients()
-    clients -= deleted
-    return sorted(clients)
+def extract_text(uploaded_file) -> str:
+    if not uploaded_file:
+        return ""
+    raw = uploaded_file.read()
+    name = uploaded_file.name.lower()
+    if name.endswith(".pdf"):
+        doc = fitz.open(stream=raw, filetype="pdf")
+        return "\n".join(p.get_text() for p in doc)
+    if name.endswith(".docx"):
+        doc = DocxDocument(io.BytesIO(raw))
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    if name.endswith(".txt"):
+        return raw.decode("utf-8", errors="ignore")
+    return ""
 
 
-def parse_themes(client_name: str) -> list[dict]:
-    # Primeiro verifica sessão atual (cliente recém-criado)
-    if client_name in st.session_state.get("session_clients", {}):
-        return st.session_state["session_clients"][client_name]["themes"]
-    # Depois verifica arquivo no disco
-    path = SISTEMA_PATH / "_outputs" / client_name / "04-lista-temas.md"
-    if not path.exists():
-        return []
-    themes = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("|"):
-            continue
-        parts = [p.strip() for p in line.split("|")[1:-1]]
-        if len(parts) < 5:
-            continue
-        num = parts[0].strip()
-        if not num.isdigit():
-            continue
-        themes.append({
-            "num": num,
-            "pilar": parts[1],
-            "tema": parts[2],
-            "formato": parts[3],
-            "persona": parts[4],
-        })
-    return themes
-
-
-def parse_themes_from_text(text: str) -> list[dict]:
+def parse_themes(text: str) -> list[dict]:
     themes = []
     for line in text.splitlines():
         if not line.startswith("|"):
             continue
         parts = [p.strip() for p in line.split("|")[1:-1]]
-        if len(parts) < 5:
-            continue
-        num = parts[0].strip()
-        if not num.isdigit():
+        if len(parts) < 5 or not parts[0].isdigit():
             continue
         themes.append({
-            "num": num,
-            "pilar": parts[1],
-            "tema": parts[2],
+            "num":     parts[0],
+            "pilar":   parts[1],
+            "tema":    parts[2],
             "formato": parts[3],
             "persona": parts[4],
         })
     return themes
-
-
-def load_client_context(client_name: str) -> dict:
-    # Verifica sessão primeiro
-    session = st.session_state.get("session_clients", {})
-    if client_name in session and session[client_name].get("context"):
-        return session[client_name]["context"]
-    # Depois verifica disco
-    base = SISTEMA_PATH / "_outputs" / client_name
-    files = ["01-mapa-empatia.md", "02-proposta-valor.md", "03-personas.md"]
-    return {f: (base / f).read_text(encoding="utf-8") for f in files if (base / f).exists()}
 
 
 def load_guia() -> str:
@@ -120,210 +92,97 @@ def load_guia() -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def pilar_emoji(pilar: str) -> str:
-    if "Comercial" in pilar:
-        return "🔴"
-    if "Institucional" in pilar:
-        return "🔵"
-    if "Educativo" in pilar:
-        return "🟢"
-    return "⚪"
+# ── Cached GitHub calls ────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=60)
+def _cached_deleted() -> frozenset:
+    return frozenset(get_deleted_clients())
 
 
-def save_to_github(client_name: str, files: dict) -> tuple[bool, str]:
-    token = os.getenv("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
-    if not token:
-        return False, "GITHUB_TOKEN não configurado nos secrets do Streamlit."
-
-    repo = "ejgalliano/studio-conteudo"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-    for path, content in files.items():
-        if not content:
-            continue
-        url = f"https://api.github.com/repos/{repo}/contents/{path}"
-        encoded = base64.b64encode(content.encode("utf-8")).decode()
-        data = {
-            "message": f"feat: adiciona cliente {client_name} via Studio",
-            "content": encoded,
-        }
-        # Verifica se arquivo já existe (para pegar o sha)
-        get_resp = requests.get(url, headers=headers)
-        if get_resp.status_code == 200:
-            data["sha"] = get_resp.json()["sha"]
-
-        put_resp = requests.put(url, json=data, headers=headers)
-        if not put_resp.ok:
-            return False, f"Erro ao salvar `{path}`: {put_resp.json().get('message', 'desconhecido')}"
-
-    return True, "ok"
+@st.cache_data(ttl=120)
+def _cached_themes(client_name: str) -> str | None:
+    return load_client_themes_raw(client_name)
 
 
-def _github_headers() -> dict:
-    token = os.getenv("GITHUB_TOKEN") or st.secrets.get("GITHUB_TOKEN", "")
-    if not token:
-        return {}
-    return {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-GITHUB_REPO = "ejgalliano/studio-conteudo"
-DELETED_FILE = "_outputs/_deleted.txt"
+@st.cache_data(ttl=120)
+def _cached_context(client_name: str) -> dict:
+    return load_client_context(client_name)
 
 
-def get_deleted_clients_github() -> set:
-    """Fetch the persistent deleted-clients list from GitHub."""
-    headers = _github_headers()
-    if not headers:
-        return set()
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DELETED_FILE}"
-    resp = requests.get(url, headers=headers)
-    if resp.status_code == 200:
-        content = base64.b64decode(resp.json()["content"]).decode("utf-8")
-        return {line.strip() for line in content.splitlines() if line.strip()}
-    return set()
+# ── Client list ────────────────────────────────────────────────────────────────
+
+def get_clients() -> list[str]:
+    clients: set[str] = set()
+
+    # From disk (local or Streamlit Cloud repo mount)
+    if OUTPUTS_PATH.exists():
+        for d in OUTPUTS_PATH.iterdir():
+            if d.is_dir() and not d.name.startswith("_"):
+                clients.add(d.name)
+
+    # From current session (just created)
+    clients.update(st.session_state.session_clients.keys())
+
+    # Remove deleted (session + GitHub)
+    deleted = st.session_state.deleted_clients | _cached_deleted()
+    clients -= deleted
+
+    return sorted(clients)
 
 
-def add_to_deleted_list_github(client_name: str):
-    """Append client to the persistent deleted list in GitHub."""
-    headers = _github_headers()
-    if not headers:
-        return
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DELETED_FILE}"
-    # Read existing list
-    existing = set()
-    sha = None
-    resp = requests.get(url, headers=headers)
-    if resp.status_code == 200:
-        existing = {line.strip() for line in base64.b64decode(resp.json()["content"]).decode("utf-8").splitlines() if line.strip()}
-        sha = resp.json()["sha"]
-    existing.add(client_name)
-    new_content = "\n".join(sorted(existing)) + "\n"
-    data = {
-        "message": f"chore: marca {client_name} como apagado",
-        "content": base64.b64encode(new_content.encode("utf-8")).decode(),
-    }
-    if sha:
-        data["sha"] = sha
-    requests.put(url, json=data, headers=headers)
+def get_themes(client_name: str) -> list[dict]:
+    # Session-first
+    if client_name in st.session_state.session_clients:
+        return st.session_state.session_clients[client_name]["themes"]
+    # Disk
+    path = OUTPUTS_PATH / client_name / "04-lista-temas.md"
+    if path.exists():
+        return parse_themes(path.read_text(encoding="utf-8"))
+    # GitHub (cached)
+    raw = _cached_themes(client_name)
+    return parse_themes(raw) if raw else []
 
 
-def remove_from_deleted_list_github(client_name: str):
-    """Remove client from the persistent deleted list so it can be recreated."""
-    headers = _github_headers()
-    if not headers:
-        return
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{DELETED_FILE}"
-    resp = requests.get(url, headers=headers)
-    if resp.status_code != 200:
-        return
-    existing = {line.strip() for line in base64.b64decode(resp.json()["content"]).decode("utf-8").splitlines() if line.strip()}
-    sha = resp.json()["sha"]
-    existing.discard(client_name)
-    new_content = "\n".join(sorted(existing)) + "\n"
-    data = {
-        "message": f"chore: reativa cliente {client_name}",
-        "content": base64.b64encode(new_content.encode("utf-8")).decode(),
-        "sha": sha,
-    }
-    requests.put(url, json=data, headers=headers)
+def get_context(client_name: str) -> dict:
+    # Session-first
+    if client_name in st.session_state.session_clients:
+        return st.session_state.session_clients[client_name]["context"]
+    # Disk
+    base = OUTPUTS_PATH / client_name
+    files = ["01-mapa-empatia.md", "02-proposta-valor.md", "03-personas.md"]
+    ctx = {f: (base / f).read_text(encoding="utf-8") for f in files if (base / f).exists()}
+    if ctx:
+        return ctx
+    # GitHub (cached)
+    return _cached_context(client_name)
 
 
-def delete_client(client_name: str) -> tuple[bool, str]:
-    """Remove client from session, disk, GitHub files, and add to deleted list."""
-    # Remove from session
-    session = st.session_state.get("session_clients", {})
-    if client_name in session:
-        del st.session_state["session_clients"][client_name]
+# ── Session state ──────────────────────────────────────────────────────────────
 
-    # Remove from disk
-    import shutil
-    client_path = SISTEMA_PATH / "_outputs" / client_name
-    if client_path.exists():
-        try:
-            shutil.rmtree(client_path)
-        except Exception:
-            pass  # Cloud filesystem pode ser read-only
+DEFAULTS = {
+    # navigation
+    "goto_novo_cliente": "",      # pré-preenche nome após reset
 
-    # Add to persistent deleted list in GitHub FIRST (garante que some mesmo se os arquivos ainda existirem)
-    add_to_deleted_list_github(client_name)
+    # client data (same session)
+    "session_clients": {},        # {name: {themes, context}}
+    "deleted_clients": set(),
 
-    # Delete individual files from GitHub
-    headers = _github_headers()
-    if headers:
-        files_to_delete = [
-            f"_outputs/{client_name}/04-lista-temas.md",
-            f"_outputs/{client_name}/01-mapa-empatia.md",
-            f"_outputs/{client_name}/02-proposta-valor.md",
-            f"_outputs/{client_name}/03-personas.md",
-        ]
-        for file_path in files_to_delete:
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{file_path}"
-            get_resp = requests.get(url, headers=headers)
-            if get_resp.status_code == 200:
-                requests.delete(url, headers=headers, json={
-                    "message": f"chore: remove cliente {client_name}",
-                    "sha": get_resp.json()["sha"],
-                })
+    # studio state
+    "active_client":   "",
+    "selected_theme":  None,
+    "caption":         "",
+    "caption_version": 0,         # incrementa para forçar re-render do text_area
+    "pilar_filter":    "Todos",
+    "active_format":   FORMATS[0],
+    "document":        [],        # [{num, theme_num, tema, pilar, formato, conteudo}]
+    "confirm_delete":  "",
 
-    return True, "ok"
-
-
-def save_themes(client_name: str, content: str):
-    folder = SISTEMA_PATH / "_outputs" / client_name
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "04-lista-temas.md").write_text(content, encoding="utf-8")
-
-
-def extract_text(uploaded_file) -> str:
-    if uploaded_file is None:
-        return ""
-    name = uploaded_file.name.lower()
-    raw = uploaded_file.read()
-    if name.endswith(".pdf"):
-        doc = fitz.open(stream=raw, filetype="pdf")
-        return "\n".join(page.get_text() for page in doc)
-    elif name.endswith(".docx"):
-        doc = DocxDocument(io.BytesIO(raw))
-        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-    elif name.endswith(".txt"):
-        return raw.decode("utf-8", errors="ignore")
-    return ""
-
-
-def save_context(client_name: str, mapa: str, proposta: str, personas: str):
-    folder = SISTEMA_PATH / "_outputs" / client_name
-    folder.mkdir(parents=True, exist_ok=True)
-    if mapa:
-        (folder / "01-mapa-empatia.md").write_text(mapa, encoding="utf-8")
-    if proposta:
-        (folder / "02-proposta-valor.md").write_text(proposta, encoding="utf-8")
-    if personas:
-        (folder / "03-personas.md").write_text(personas, encoding="utf-8")
-
-
-# ── Session state ─────────────────────────────────────────────────────────────
-
-defaults = {
-    "selected_theme": None,
-    "generated_caption": "",
-    "document_items": [],
-    "last_client": "",
-    "pilar_filter": "Todos",
-    "selected_format": "📱 Card Único",
-    "novo_cliente_temas": None,
-    "novo_cliente_temas_raw": "",
-    "objetivos_extraidos": "",
-    "session_clients": {},  # {nome: {"themes": [...], "context": {}}}
-    "confirm_delete_client": "",
-    "deleted_clients": set(),  # clientes apagados nesta sessão — ocultos imediatamente
-    "goto_novo_cliente": "",   # pré-preenche o nome ao redirecionar para Novo Cliente
+    # novo cliente
+    "novo_temas":      None,      # list[dict] após geração
+    "novo_temas_raw":  "",
 }
-for k, v in defaults.items():
+
+for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -333,14 +192,13 @@ for k, v in defaults.items():
 st.markdown("### 🎯 Studio de Conteúdo")
 st.divider()
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-
 tab_studio, tab_novo = st.tabs(["📋 Gerar Conteúdo", "➕ Novo Cliente"])
 
 
-# ════════════════════════════════════════════════════════════
-# TAB 1 — STUDIO (tema + legenda)
-# ════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — STUDIO
+# ══════════════════════════════════════════════════════════════════════════════
+
 with tab_studio:
 
     clients = get_clients()
@@ -349,87 +207,99 @@ with tab_studio:
         st.info("Nenhum cliente encontrado. Use a aba **➕ Novo Cliente** para cadastrar.")
         st.stop()
 
-    top_left, top_mid, top_del, top_right = st.columns([3, 3, 1, 2])
-    with top_left:
-        client = st.selectbox("Cliente", clients, label_visibility="collapsed", key="client_select")
-    with top_mid:
-        if st.button("🔄 Resetar temas", use_container_width=True, help="Apaga os temas atuais para gerar novas ideias"):
-            if client in st.session_state.get("session_clients", {}):
-                del st.session_state["session_clients"][client]
-            themes_path = SISTEMA_PATH / "_outputs" / client / "04-lista-temas.md"
+    # ── Top bar ──
+    col_sel, col_reset, col_del, col_doc = st.columns([3, 3, 1, 2])
+
+    with col_sel:
+        client = st.selectbox(
+            "cliente", clients,
+            label_visibility="collapsed",
+            key="client_select",
+        )
+
+    with col_reset:
+        if st.button("🔄 Resetar temas", use_container_width=True,
+                     help="Apaga os temas para gerar novas ideias"):
+            # Remove temas da sessão
+            if client in st.session_state.session_clients:
+                del st.session_state.session_clients[client]
+            # Remove do disco
+            themes_path = OUTPUTS_PATH / client / "04-lista-temas.md"
             if themes_path.exists():
-                try:
-                    themes_path.unlink()
-                except Exception:
-                    pass
+                themes_path.unlink(missing_ok=True)
+            # Limpa cache
+            _cached_themes.clear()
+            # Reseta painel direito
             st.session_state.selected_theme = None
-            st.session_state.generated_caption = ""
-            st.session_state.confirm_delete_client = ""
-            st.session_state.goto_novo_cliente = client   # pré-preenche e redireciona
+            st.session_state.caption = ""
+            st.session_state.caption_version += 1
+            # Redireciona para Novo Cliente com nome pré-preenchido
+            st.session_state.goto_novo_cliente = client
             st.rerun()
-    with top_del:
-        if st.button("🗑️", use_container_width=True, help="Apagar este cliente permanentemente"):
-            st.session_state.confirm_delete_client = client
-            st.rerun()
-    with top_right:
-        doc_count = len(st.session_state.document_items)
-        st.markdown(f"<div class='status-bar'>📄 {doc_count} no documento</div>", unsafe_allow_html=True)
 
-    # Confirmation bar
-    if st.session_state.confirm_delete_client == client:
-        st.warning(f"⚠️ Tem certeza que deseja **apagar o cliente {client}** permanentemente? Isso remove os temas do GitHub também.")
-        conf_yes, conf_no, _ = st.columns([2, 2, 4])
-        with conf_yes:
-            if st.button("✅ Sim, apagar", type="primary", use_container_width=True, key="confirm_del_yes"):
-                with st.spinner("Apagando cliente..."):
-                    ok, msg = delete_client(client)
-                # Marca como apagado imediatamente na sessão e limpa cache
+    with col_del:
+        if st.button("🗑️", use_container_width=True, help="Apagar cliente permanentemente"):
+            st.session_state.confirm_delete = client
+            st.rerun()
+
+    with col_doc:
+        doc_count = len(st.session_state.document)
+        st.markdown(f"<div class='status-pill'>📄 {doc_count} no documento</div>",
+                    unsafe_allow_html=True)
+
+    # ── Delete confirmation ──
+    if st.session_state.confirm_delete == client:
+        st.warning(f"⚠️ Apagar **{client}** permanentemente? Isso remove os arquivos do GitHub também.")
+        c_yes, c_no, _ = st.columns([2, 2, 4])
+        with c_yes:
+            if st.button("✅ Sim, apagar", type="primary", use_container_width=True):
+                with st.spinner("Apagando..."):
+                    gh_delete_client(client)
                 st.session_state.deleted_clients.add(client)
-                _fetch_deleted_clients.clear()
-                st.session_state.confirm_delete_client = ""
+                _cached_deleted.clear()
+                st.session_state.confirm_delete = ""
                 st.session_state.selected_theme = None
-                st.session_state.generated_caption = ""
-                st.session_state.last_client = ""
-                if ok:
-                    st.success(f"✅ Cliente **{client}** apagado com sucesso.")
-                else:
-                    st.error(f"❌ {msg}")
+                st.session_state.caption = ""
+                st.session_state.active_client = ""
                 st.rerun()
-        with conf_no:
-            if st.button("❌ Cancelar", use_container_width=True, key="confirm_del_no"):
-                st.session_state.confirm_delete_client = ""
+        with c_no:
+            if st.button("❌ Cancelar", use_container_width=True):
+                st.session_state.confirm_delete = ""
                 st.rerun()
 
-    if client != st.session_state.last_client:
+    # Reset painel quando troca de cliente
+    if client != st.session_state.active_client:
+        st.session_state.active_client = client
         st.session_state.selected_theme = None
-        st.session_state.generated_caption = ""
-        st.session_state.last_client = client
+        st.session_state.caption = ""
+        st.session_state.caption_version += 1
 
-    themes = parse_themes(client)
-    client_context = load_client_context(client)
-    guia = load_guia()
+    themes  = get_themes(client)
+    context = get_context(client)
+    guia    = load_guia()
 
     if not themes:
-        st.warning(f"Nenhum tema encontrado para **{client}**.")
+        st.warning(f"Nenhum tema encontrado para **{client}**. Use **🔄 Resetar temas** para gerar.")
         st.stop()
 
+    # ── Panels ──
     left, right = st.columns([2, 2.5], gap="large")
 
     # ── LEFT: theme list ──
     with left:
-        st.markdown(f"**📋 Temas — {client}** &nbsp; <span style='color:#888;font-size:13px'>{len(themes)} temas</span>", unsafe_allow_html=True)
+        st.markdown(
+            f"**📋 {client}** &nbsp;"
+            f"<span style='color:#888;font-size:13px'>{len(themes)} temas</span>",
+            unsafe_allow_html=True,
+        )
 
         search = st.text_input("🔍", placeholder="Buscar tema...", label_visibility="collapsed")
 
         f1, f2, f3, f4 = st.columns(4)
-        if f1.button("Todos", use_container_width=True):
-            st.session_state.pilar_filter = "Todos"
-        if f2.button("🔴 Com.", use_container_width=True):
-            st.session_state.pilar_filter = "Comercial"
-        if f3.button("🔵 Inst.", use_container_width=True):
-            st.session_state.pilar_filter = "Institucional"
-        if f4.button("🟢 Edu.", use_container_width=True):
-            st.session_state.pilar_filter = "Educativo"
+        if f1.button("Todos",      use_container_width=True): st.session_state.pilar_filter = "Todos"
+        if f2.button("🔴 Com.",    use_container_width=True): st.session_state.pilar_filter = "Comercial"
+        if f3.button("🔵 Inst.",   use_container_width=True): st.session_state.pilar_filter = "Institucional"
+        if f4.button("🟢 Edu.",    use_container_width=True): st.session_state.pilar_filter = "Educativo"
 
         filtered = themes
         if search:
@@ -439,11 +309,13 @@ with tab_studio:
 
         st.caption(f"{len(filtered)} temas exibidos")
 
-        used_nums = {item.get("theme_num") for item in st.session_state.document_items}
+        # Marca temas já adicionados ao documento
+        used_nums = {item["theme_num"] for item in st.session_state.document}
+
         df = pd.DataFrame([{
-            "#": t["num"],
+            "#":     t["num"],
             "Pilar": pilar_emoji(t["pilar"]),
-            "Tema": ("✅ " if t["num"] in used_nums else "") + t["tema"],
+            "Tema":  ("✅ " if t["num"] in used_nums else "") + t["tema"],
         } for t in filtered])
 
         event = st.dataframe(
@@ -461,145 +333,149 @@ with tab_studio:
         )
 
         if event.selection and event.selection.rows:
-            row_idx = event.selection.rows[0]
-            new_theme = filtered[row_idx]
-            if st.session_state.selected_theme != new_theme:
-                st.session_state.selected_theme = new_theme
-                st.session_state.generated_caption = ""
+            chosen = filtered[event.selection.rows[0]]
+            if chosen != st.session_state.selected_theme:
+                st.session_state.selected_theme = chosen
+                st.session_state.caption = ""
+                st.session_state.caption_version += 1
 
-    # ── RIGHT: caption generator ──
+    # ── RIGHT: caption panel ──
     with right:
         if not st.session_state.selected_theme:
             st.markdown("""
-            <div style='text-align:center; padding:80px 0; color:#888'>
-                <div style='font-size:48px'>👈</div>
-                <div style='font-size:18px; margin-top:12px'>Clique em um tema para gerar a legenda</div>
-            </div>
-            """, unsafe_allow_html=True)
+            <div style='text-align:center;padding:80px 0;color:#888'>
+              <div style='font-size:48px'>👈</div>
+              <div style='font-size:18px;margin-top:12px'>Clique em um tema para começar</div>
+            </div>""", unsafe_allow_html=True)
         else:
             theme = st.session_state.selected_theme
-            emoji = pilar_emoji(theme["pilar"])
 
-            st.markdown(f"#### {emoji} {theme['tema']}")
+            st.markdown(f"#### {pilar_emoji(theme['pilar'])} {theme['tema']}")
 
-            meta1, meta2 = st.columns(2)
-            with meta1:
-                st.caption(f"**Pilar:** {theme['pilar']}")
-                st.caption(f"**Persona:** {theme['persona']}")
-            with meta2:
-                st.caption(f"**Formato sugerido:** {theme['formato']}")
+            m1, m2 = st.columns(2)
+            m1.caption(f"**Pilar:** {theme['pilar']}")
+            m1.caption(f"**Persona:** {theme['persona']}")
+            m2.caption(f"**Formato sugerido:** {theme['formato']}")
 
+            # ── Format selector ──
             st.markdown("**Formato do post:**")
-            fmt_cols = st.columns(5)
-            formats = ["📱 Card Único", "🎠 Carrossel", "🎬 Reels", "📖 Stories", "💰 Tráfego Pago"]
-
-            for i, fmt in enumerate(formats):
-                if fmt_cols[i].button(fmt, key=f"fmt_{i}", use_container_width=True,
-                                      type="primary" if st.session_state.selected_format == fmt else "secondary"):
-                    st.session_state.selected_format = fmt
-                    st.session_state.generated_caption = ""
+            fmt_cols = st.columns(len(FORMATS))
+            for i, fmt in enumerate(FORMATS):
+                is_active = st.session_state.active_format == fmt
+                if fmt_cols[i].button(
+                    fmt, key=f"fmt_{i}", use_container_width=True,
+                    type="primary" if is_active else "secondary",
+                ):
+                    if not is_active:
+                        st.session_state.active_format = fmt
+                        st.session_state.caption = ""
+                        st.session_state.caption_version += 1
+                        st.rerun()
 
             st.markdown("")
 
+            # ── Generate button ──
             if st.button("⚡ Gerar Legenda", type="primary", use_container_width=True):
-                if not os.getenv("GROQ_API_KEY"):
-                    st.error("GROQ_API_KEY não configurada.")
-                else:
-                    with st.spinner("Gerando legenda..."):
-                        try:
-                            caption = generate_caption(
-                                theme=theme,
-                                formato=st.session_state.selected_format,
-                                client_name=client,
-                                client_context=client_context,
-                                guia=guia,
-                            )
-                            st.session_state.generated_caption = caption
-                        except Exception as e:
-                            st.error(f"Erro ao gerar: {e}")
+                with st.spinner("Gerando legenda..."):
+                    try:
+                        caption = generate_caption(
+                            theme=theme,
+                            formato=st.session_state.active_format,
+                            client_name=client,
+                            context=context,
+                            guia=guia,
+                        )
+                        st.session_state.caption = caption
+                        st.session_state.caption_version += 1
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
 
-            if st.session_state.generated_caption:
+            # ── Caption editor ──
+            if st.session_state.caption:
                 st.markdown("---")
                 st.markdown("**📝 Legenda gerada — edite se necessário:**")
 
-                # Se há uma atualização pendente (pós-refinamento), limpa a chave
-                # ANTES do widget ser renderizado, para ele usar o novo value=
-                if st.session_state.pop("_refresh_caption", False):
-                    st.session_state.pop("caption_editor", None)
-
+                # caption_version muda sempre que geramos/refinamos → widget recria do zero
                 edited = st.text_area(
                     "legenda",
-                    value=st.session_state.generated_caption,
-                    height=420,
+                    value=st.session_state.caption,
+                    height=400,
                     label_visibility="collapsed",
-                    key="caption_editor",
+                    key=f"caption_v{st.session_state.caption_version}",
                 )
 
-                # ── Ajuste com IA ──
+                # ── AI adjustment (st.form garante que o valor é capturado no submit) ──
                 st.markdown("**✏️ Ajustar com IA:**")
                 with st.form("form_ajuste", clear_on_submit=True):
-                    ajuste_texto = st.text_area(
-                        "ajuste",
-                        placeholder='Descreva os ajustes: ex. "Tom mais descontraído", "Troque o CTA por WhatsApp", "Foque nos bairros: Vila Souza, Vila Carvalho"...',
+                    instrucao = st.text_area(
+                        "instrucao",
+                        placeholder=(
+                            'Descreva os ajustes desejados. Ex: "Deixe mais curto, '
+                            'tom mais descontraído, troque o CTA por WhatsApp"...'
+                        ),
+                        height=90,
                         label_visibility="collapsed",
-                        height=100,
                     )
-                    submitted = st.form_submit_button("✏️ Ajustar com IA", use_container_width=True, type="secondary")
+                    ajustar = st.form_submit_button(
+                        "✏️ Ajustar com IA", use_container_width=True, type="secondary"
+                    )
 
-                if submitted:
-                    if ajuste_texto.strip():
+                if ajustar:
+                    if instrucao.strip():
                         with st.spinner("Ajustando..."):
                             try:
-                                refinado = refine_caption(edited, ajuste_texto.strip())
-                                st.session_state.generated_caption = refinado
-                                st.session_state["_refresh_caption"] = True
+                                refined = refine_caption(edited, instrucao.strip())
+                                st.session_state.caption = refined
+                                st.session_state.caption_version += 1
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Erro ao ajustar: {e}")
+                                st.error(str(e))
                     else:
-                        st.warning("Digite uma instrução de ajuste primeiro.")
+                        st.warning("Digite uma instrução antes de ajustar.")
 
+                # ── Action buttons ──
                 st.markdown("")
-                btn_add, btn_regen, btn_clear = st.columns([3, 2, 1])
+                b_add, b_regen, b_clear = st.columns([3, 2, 1])
 
-                with btn_add:
+                with b_add:
                     if st.button("✅ Adicionar ao documento", type="primary", use_container_width=True):
-                        item = {
-                            "num": len(st.session_state.document_items) + 1,
+                        st.session_state.document.append({
+                            "num":       len(st.session_state.document) + 1,
                             "theme_num": theme["num"],
-                            "tema": theme["tema"],
-                            "pilar": theme["pilar"],
-                            "formato": st.session_state.selected_format,
-                            "conteudo": edited,
-                        }
-                        st.session_state.document_items.append(item)
-                        st.session_state.generated_caption = ""
+                            "tema":      theme["tema"],
+                            "pilar":     theme["pilar"],
+                            "formato":   st.session_state.active_format,
+                            "conteudo":  edited,
+                        })
+                        st.session_state.caption = ""
+                        st.session_state.caption_version += 1
                         st.session_state.selected_theme = None
-                        st.success(f"✅ Adicionado! {len(st.session_state.document_items)} conteúdo(s) no documento.")
+                        st.success(f"✅ Adicionado! {len(st.session_state.document)} conteúdo(s) no documento.")
                         st.rerun()
 
-                with btn_regen:
+                with b_regen:
                     if st.button("🔄 Regerar", use_container_width=True):
-                        st.session_state.generated_caption = ""
+                        st.session_state.caption = ""
+                        st.session_state.caption_version += 1
                         st.rerun()
 
-                with btn_clear:
-                    if st.button("🗑️", use_container_width=True, help="Limpar"):
-                        st.session_state.generated_caption = ""
+                with b_clear:
+                    if st.button("🗑️", use_container_width=True, help="Descartar legenda"):
+                        st.session_state.caption = ""
+                        st.session_state.caption_version += 1
                         st.rerun()
 
-    # ── Document section ──
+    # ── Document section ──────────────────────────────────────────────────────
     st.divider()
-    doc_header, doc_export = st.columns([4, 1])
+    dh, de = st.columns([4, 1])
+    dh.markdown(f"### 📄 Documento — {len(st.session_state.document)} conteúdo(s)")
 
-    with doc_header:
-        st.markdown(f"### 📄 Documento — {len(st.session_state.document_items)} conteúdo(s) aprovado(s)")
-
-    with doc_export:
-        if st.session_state.document_items:
-            word_bytes = export_to_word(st.session_state.document_items, client)
+    if st.session_state.document:
+        with de:
+            word_bytes = export_to_word(st.session_state.document, client)
             st.download_button(
-                label="⬇️ Exportar Word",
+                "⬇️ Exportar Word",
                 data=word_bytes,
                 file_name=f"conteudos-{client.lower()}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -607,239 +483,234 @@ with tab_studio:
                 use_container_width=True,
             )
 
-    if not st.session_state.document_items:
-        st.caption("Nenhum conteúdo aprovado ainda.")
-    else:
-        for i, item in enumerate(st.session_state.document_items):
+        for i, item in enumerate(st.session_state.document):
             with st.expander(
-                f"#{item['num']} | {pilar_emoji(item['pilar'])} {item['pilar']} | {item['tema']} | {item['formato']}",
+                f"#{item['num']} · {pilar_emoji(item['pilar'])} {item['pilar']} · "
+                f"{item['tema']} · {item['formato']}",
                 expanded=False,
             ):
-                col_content, col_remove = st.columns([6, 1])
-                with col_content:
-                    st.text(item["conteudo"])
-                with col_remove:
-                    if st.button("🗑️ Remover", key=f"remove_{i}", use_container_width=True):
-                        st.session_state.document_items.pop(i)
-                        for j, d in enumerate(st.session_state.document_items):
-                            d["num"] = j + 1
-                        st.rerun()
+                c_txt, c_del = st.columns([6, 1])
+                c_txt.text(item["conteudo"])
+                if c_del.button("🗑️", key=f"del_doc_{i}", use_container_width=True):
+                    st.session_state.document.pop(i)
+                    for j, d in enumerate(st.session_state.document):
+                        d["num"] = j + 1
+                    st.rerun()
+    else:
+        st.caption("Nenhum conteúdo aprovado ainda.")
 
 
-# ════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — NOVO CLIENTE
-# ════════════════════════════════════════════════════════════
-with tab_novo:
-    # Redireciona automaticamente para esta aba após "Resetar temas"
-    _goto = st.session_state.get("goto_novo_cliente", "")
-    if _goto:
-        st.markdown(f"""
-        <script>
-        setTimeout(function() {{
-            const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-            if (tabs.length > 1) tabs[1].click();
-        }}, 200);
-        </script>
-        """, unsafe_allow_html=True)
-        st.info(f"✅ Temas de **{_goto}** resetados. Recarregue os documentos e clique em **⚡ Gerar Lista de Temas** para criar novas ideias.")
+# ══════════════════════════════════════════════════════════════════════════════
 
-    st.markdown("### ➕ Cadastrar Novo Cliente")
-    st.markdown("Faça upload da transcrição do briefing — a IA extrai os objetivos automaticamente. Complemente com os demais documentos se tiver.")
+with tab_novo:
+
+    # Auto-switch via JS quando vem de "Resetar temas"
+    goto = st.session_state.goto_novo_cliente
+    if goto:
+        st.markdown("""<script>
+        setTimeout(function(){
+            var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+            if(tabs.length > 1) tabs[1].click();
+        }, 200);
+        </script>""", unsafe_allow_html=True)
+        st.info(f"✅ Temas de **{goto}** resetados. Faça o upload dos documentos e clique em **⚡ Gerar Lista de Temas**.")
+
+    st.markdown("### ➕ Novo Cliente")
+    st.markdown("Faça upload da transcrição do briefing — a IA extrai os objetivos automaticamente. Depois, carregue os documentos estratégicos se já tiver.")
     st.divider()
 
-    nome_cliente = st.text_input(
+    # ── Client name ──
+    nome_raw = st.text_input(
         "Nome do cliente (sem espaços, ex: JOAO-PADARIA)",
         placeholder="NOME-DO-CLIENTE",
-        value=_goto,  # pré-preenche com o nome do cliente resetado
+        value=goto,
     ).upper().strip().replace(" ", "-")
+    nome_cliente = nome_raw
 
-    # Limpa o redirecionamento depois de exibir
-    if _goto:
+    # Limpa redirect depois de usar
+    if goto:
         st.session_state.goto_novo_cliente = ""
 
+    # ── Transcription ──
     st.markdown("#### 📝 Transcrição do Briefing")
-    st.caption("Aceita **.txt**, **.docx** ou **.pdf** — o conteúdo é o que importa")
-    transcricao_file = st.file_uploader("Transcrição / Briefing", type=["txt", "docx", "pdf"], key="up_transcricao", label_visibility="collapsed")
+    st.caption("Aceita **.txt**, **.docx** ou **.pdf**")
 
+    transcricao_file = st.file_uploader(
+        "Transcrição", type=["txt", "docx", "pdf"],
+        key="up_transcricao", label_visibility="collapsed",
+    )
     transcricao_texto = extract_text(transcricao_file) if transcricao_file else ""
 
     if transcricao_file and transcricao_texto:
-        col_info, col_btn = st.columns([3, 1])
-        with col_info:
-            st.success(f"✅ Transcrição carregada: **{transcricao_file.name}** ({len(transcricao_texto):,} caracteres)")
-        with col_btn:
-            if st.button("🤖 Extrair Objetivos", use_container_width=True, type="primary"):
-                with st.spinner("Lendo a transcrição e extraindo objetivos..."):
+        c_info, c_btn = st.columns([3, 1])
+        c_info.success(f"✅ **{transcricao_file.name}** carregado ({len(transcricao_texto):,} caracteres)")
+        with c_btn:
+            if st.button("🤖 Extrair Objetivos", type="primary", use_container_width=True):
+                with st.spinner("Lendo transcrição..."):
                     try:
                         resultado = extract_objectives(transcricao_texto)
-                        # Seta diretamente no key do widget para aparecer imediatamente
                         st.session_state["objetivos_editor"] = resultado
                     except Exception as e:
-                        st.error(f"Erro ao extrair objetivos: {e}")
+                        st.error(str(e))
 
+    # ── Objectives ──
     st.markdown("#### 🎯 Objetivos do Cliente")
     objetivos = st.text_area(
         "objetivos",
-        placeholder="Clique em 'Extrair Objetivos' após carregar a transcrição, ou escreva manualmente...",
-        height=220,
+        placeholder="Clique em '🤖 Extrair Objetivos' ou escreva manualmente...",
+        height=200,
         label_visibility="collapsed",
         key="objetivos_editor",
     )
 
-    st.markdown("#### 📂 Documentos Estratégicos *(opcional — se já tiver prontos)*")
+    # ── Strategic docs ──
+    st.markdown("#### 📂 Documentos Estratégicos *(opcional)*")
     st.caption("Aceita **.txt**, **.docx** ou **.pdf**")
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        mapa_file    = st.file_uploader("🧠 Mapa de Empatia", type=["txt", "docx", "pdf"], key="up_mapa")
-        proposta_file = st.file_uploader("💎 Proposta de Valor", type=["txt", "docx", "pdf"], key="up_prop")
-    with col_b:
-        personas_file = st.file_uploader("👤 Personas", type=["txt", "docx", "pdf"], key="up_pers")
+    ca, cb = st.columns(2)
+    with ca:
+        mapa_file     = st.file_uploader("🧠 Mapa de Empatia",  type=["txt","docx","pdf"], key="up_mapa")
+        proposta_file = st.file_uploader("💎 Proposta de Valor", type=["txt","docx","pdf"], key="up_prop")
+    with cb:
+        personas_file = st.file_uploader("👤 Personas",          type=["txt","docx","pdf"], key="up_pers")
 
-    mapa_empatia   = extract_text(mapa_file)
-    proposta_valor = extract_text(proposta_file)
-    personas       = extract_text(personas_file)
+    mapa_texto     = extract_text(mapa_file)
+    proposta_texto = extract_text(proposta_file)
+    personas_texto = extract_text(personas_file)
 
+    # ── Extra instructions ──
     st.markdown("#### 💬 Instruções Adicionais *(opcional)*")
-    instrucoes = st.text_area(
+    instrucoes_extra = st.text_area(
         "instrucoes",
-        placeholder="Ex: Focar em conteúdo para WhatsApp, evitar temas sobre financiamento, priorizar datas comemorativas de maio...",
-        height=100,
+        placeholder="Ex: Focar em WhatsApp, evitar financiamento, priorizar maio...",
+        height=80,
         label_visibility="collapsed",
     )
 
     st.divider()
 
+    # ── Generate themes ──
     if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True):
         if not nome_cliente:
             st.error("Preencha o nome do cliente.")
-        elif not any([objetivos, mapa_empatia, proposta_valor, personas, transcricao_texto]):
-            st.error("Preencha pelo menos um dos campos estratégicos.")
+        elif not any([objetivos, mapa_texto, proposta_texto, personas_texto, transcricao_texto]):
+            st.error("Preencha pelo menos um campo estratégico.")
         elif not os.getenv("GROQ_API_KEY"):
             st.error("GROQ_API_KEY não configurada.")
         else:
-            st.info("Gerando 350 temas em 10 sub-lotes (35 por chamada). Total estimado: 3–5 minutos. Não feche esta aba.")
-            progress = st.progress(0, text="Iniciando...")
-            status = st.empty()
+            st.info(f"Gerando {len(THEME_BATCHES) * 35} temas em {len(THEME_BATCHES)} sub-lotes. Estimativa: 3–5 minutos. Não feche esta aba.")
+            progress_bar  = st.progress(0, text="Iniciando...")
+            status_text   = st.empty()
+
+            pilar_labels  = {"Comercial": "🔴 Comercial", "Institucional": "🔵 Institucional", "Educativo": "🟢 Educativo"}
+
+            def on_progress(pilar, batch_num, total):
+                pct = int((batch_num - 1) / total * 100)
+                progress_bar.progress(pct, text=f"Gerando {pilar_labels[pilar]} — sub-lote {batch_num}/{total}...")
+                status_text.caption(f"⏳ Aguarde, chamando IA para gerar temas {pilar_labels[pilar]}...")
 
             try:
-                etapas = {"Comercial": 33, "Institucional": 66, "Educativo": 100}
-                labels = ["🔴", "🔵", "🟢"]
-                descricoes = ["Comercial (etapa 1/3)", "Institucional (etapa 2/3)", "Educativo (etapa 3/3)"]
-
-                def update_progress(pilar):
-                    pct = list(etapas.keys()).index(pilar)
-                    progress.progress(pct * 33, text=f"Gerando temas {labels[pct]} {descricoes[pct]} — aguarde...")
-                    status.caption(f"⏳ Chamando IA para gerar temas {pilar}... isso pode levar até 30 segundos.")
+                obj_final = objetivos
+                if instrucoes_extra:
+                    obj_final += f"\n\n## INSTRUÇÕES ADICIONAIS:\n{instrucoes_extra}"
 
                 raw = generate_themes(
                     client_name=nome_cliente,
-                    mapa_empatia=mapa_empatia or transcricao_texto[:3000],
-                    proposta_valor=proposta_valor,
-                    personas=personas,
-                    objetivos=objetivos + ("\n\n## INSTRUÇÕES ADICIONAIS:\n" + instrucoes if instrucoes else ""),
-                    progress_callback=update_progress,
+                    objetivos=obj_final,
+                    mapa=mapa_texto or transcricao_texto[:3000],
+                    proposta=proposta_texto,
+                    personas=personas_texto,
+                    progress_callback=on_progress,
                 )
-                progress.progress(100, text="Concluído!")
-                temas_parsed = parse_themes_from_text(raw)
-                st.session_state.novo_cliente_temas = temas_parsed
-                st.session_state.novo_cliente_temas_raw = raw
+                progress_bar.progress(100, text="Concluído! ✅")
+                temas = parse_themes(raw)
+                st.session_state.novo_temas     = temas
+                st.session_state.novo_temas_raw = raw
             except Exception as e:
-                st.error(f"Erro ao gerar temas: {e}")
+                st.error(str(e))
 
-    # Show generated themes for approval
-    if st.session_state.novo_cliente_temas:
-        temas = st.session_state.novo_cliente_temas
-        st.success(f"✅ {len(temas)} temas gerados para **{nome_cliente}**! Revise abaixo e confirme.")
+    # ── Preview & confirm ──
+    if st.session_state.novo_temas:
+        temas = st.session_state.novo_temas
 
-        df_preview = pd.DataFrame([{
-            "#": t["num"],
-            "Pilar": t["pilar"],
-            "Tema": t["tema"],
-            "Formato": t["formato"],
-            "Persona": t["persona"],
+        st.success(f"✅ {len(temas)} temas gerados para **{nome_cliente}**! Revise e confirme.")
+
+        # Distribution metrics
+        dist = {p: sum(1 for t in temas if p in t["pilar"]) for p in ["Comercial", "Institucional", "Educativo"]}
+        d1, d2, d3 = st.columns(3)
+        d1.metric("🔴 Comercial",     dist["Comercial"])
+        d2.metric("🔵 Institucional", dist["Institucional"])
+        d3.metric("🟢 Educativo",     dist["Educativo"])
+
+        df_prev = pd.DataFrame([{
+            "#": t["num"], "Pilar": t["pilar"], "Tema": t["tema"],
+            "Formato": t["formato"], "Persona": t["persona"],
         } for t in temas])
-
-        st.dataframe(df_preview, use_container_width=True, height=400, hide_index=True)
-
-        st.markdown("**Distribuição:**")
-        comercial = sum(1 for t in temas if "Comercial" in t["pilar"])
-        institucional = sum(1 for t in temas if "Institucional" in t["pilar"])
-        educativo = sum(1 for t in temas if "Educativo" in t["pilar"])
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🔴 Comercial", comercial)
-        c2.metric("🔵 Institucional", institucional)
-        c3.metric("🟢 Educativo", educativo)
+        st.dataframe(df_prev, use_container_width=True, height=380, hide_index=True)
 
         st.divider()
-        st.markdown("**Confirmar e salvar este cliente?**")
-        col_ok, col_cancel = st.columns([2, 1])
+        st.markdown("**Confirmar e usar este cliente?**")
+        col_ok, col_re, col_gh = st.columns([2, 1, 1])
 
         with col_ok:
             if st.button("✅ Confirmar e usar no Studio", type="primary", use_container_width=True):
                 if not nome_cliente:
                     st.error("Nome do cliente em branco.")
                 else:
-                    # Se o cliente estava na lista negra (apagado antes), remove de lá
-                    if nome_cliente in st.session_state.get("deleted_clients", set()):
-                        st.session_state["deleted_clients"].discard(nome_cliente)
-                    remove_from_deleted_list_github(nome_cliente)
-                    _fetch_deleted_clients.clear()
+                    # Remove da lista negra se estava lá
+                    remove_from_deleted(nome_cliente)
+                    st.session_state.deleted_clients.discard(nome_cliente)
+                    _cached_deleted.clear()
 
-                    # Salva na sessão atual (disponível imediatamente)
-                    st.session_state["session_clients"][nome_cliente] = {
-                        "themes": temas,
+                    # Salva na sessão (disponível imediatamente)
+                    st.session_state.session_clients[nome_cliente] = {
+                        "themes":  temas,
                         "context": {
-                            "01-mapa-empatia.md": mapa_empatia,
-                            "02-proposta-valor.md": proposta_valor,
-                            "03-personas.md": personas,
-                        }
+                            "01-mapa-empatia.md":  mapa_texto,
+                            "02-proposta-valor.md": proposta_texto,
+                            "03-personas.md":       personas_texto,
+                        },
                     }
-                    # Tenta salvar no disco também
-                    try:
-                        header = "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n|---|---|---|---|---|\n"
-                        full_content = f"# LISTA DE TEMAS — {nome_cliente}\n\n" + header + "\n".join(
-                            f"| {t['num']} | {t['pilar']} | {t['tema']} | {t['formato']} | {t['persona']} |"
-                            for t in temas
-                        )
-                        save_themes(nome_cliente, full_content)
-                        save_context(nome_cliente, mapa_empatia, proposta_valor, personas)
-                    except Exception:
-                        pass  # Disco pode ser read-only no cloud
 
-                    st.session_state.novo_cliente_temas = None
-                    st.session_state.novo_cliente_temas_raw = ""
-                    st.success(f"✅ Cliente **{nome_cliente}** pronto! Clique na aba **📋 Gerar Conteúdo** e selecione-o.")
+                    # Tenta salvar no disco
+                    try:
+                        folder = OUTPUTS_PATH / nome_cliente
+                        folder.mkdir(parents=True, exist_ok=True)
+                        (folder / "04-lista-temas.md").write_text(
+                            st.session_state.novo_temas_raw, encoding="utf-8"
+                        )
+                    except Exception:
+                        pass
+
+                    st.session_state.novo_temas     = None
+                    st.session_state.novo_temas_raw = ""
+                    st.success(f"✅ **{nome_cliente}** pronto! Vá para **📋 Gerar Conteúdo** e selecione-o.")
                     st.balloons()
                     st.rerun()
 
-        with col_cancel:
+        with col_re:
             if st.button("🔄 Gerar novamente", use_container_width=True):
-                st.session_state.novo_cliente_temas = None
-                st.session_state.novo_cliente_temas_raw = ""
+                st.session_state.novo_temas     = None
+                st.session_state.novo_temas_raw = ""
                 st.rerun()
 
-        # Salvar permanentemente no GitHub
-        st.divider()
-        st.markdown("#### 💾 Salvar permanentemente")
-        st.caption("Salva os temas no GitHub para ficarem disponíveis mesmo após reiniciar o app.")
-        if st.button("☁️ Salvar no GitHub", use_container_width=True):
-            if not nome_cliente:
-                st.error("Nome do cliente em branco.")
-            else:
-                with st.spinner("Salvando no GitHub..."):
-                    header = "| Nº | Pilar | Tema | Formato Sugerido | Persona-Alvo |\n|---|---|---|---|---|\n"
-                    temas_content = f"# LISTA DE TEMAS — {nome_cliente}\n\n" + header + "\n".join(
-                        f"| {t['num']} | {t['pilar']} | {t['tema']} | {t['formato']} | {t['persona']} |"
-                        for t in temas
-                    )
-                    files = {
-                        f"_outputs/{nome_cliente}/04-lista-temas.md": temas_content,
-                        f"_outputs/{nome_cliente}/01-mapa-empatia.md": mapa_empatia,
-                        f"_outputs/{nome_cliente}/02-proposta-valor.md": proposta_valor,
-                        f"_outputs/{nome_cliente}/03-personas.md": personas,
-                    }
-                    ok, msg = save_to_github(nome_cliente, files)
+        with col_gh:
+            if st.button("☁️ Salvar no GitHub", use_container_width=True,
+                         help="Torna o cliente permanente (sobrevive a reinicializações)"):
+                if not nome_cliente:
+                    st.error("Nome do cliente em branco.")
+                else:
+                    with st.spinner("Salvando no GitHub..."):
+                        files = {
+                            "04-lista-temas.md":   st.session_state.novo_temas_raw,
+                            "01-mapa-empatia.md":  mapa_texto,
+                            "02-proposta-valor.md": proposta_texto,
+                            "03-personas.md":       personas_texto,
+                        }
+                        ok, msg = save_client(nome_cliente, files)
+                        _cached_themes.clear()
                     if ok:
                         st.success("✅ Salvo no GitHub! O cliente estará disponível permanentemente.")
                     else:
