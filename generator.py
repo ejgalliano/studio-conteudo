@@ -246,7 +246,8 @@ def generate_caption(
     if contexto: ctx += f"CONTEXTO:\n{contexto[:1000]}\n\n"
     if objetivos: ctx += f"OBJETIVOS:\n{objetivos[:800]}\n\n"
 
-    prompt = f"""Você é um especialista em marketing de conteúdo para redes sociais. Crie um conteúdo completo para o tema abaixo.
+    prompt = f"""Você é um especialista em marketing de conteúdo para redes sociais.
+Crie exatamente UM conteúdo completo para o tema abaixo. Apenas um, não mais.
 
 {_NO_MARKDOWN}
 
@@ -256,7 +257,7 @@ GUIA DE CRIAÇÃO:
 CLIENTE: {client_name}
 {ctx}
 
-SOLICITACAO:
+SOLICITACAO (apenas UM post):
 Tema: {theme['tema']}
 Pilar: {theme['pilar']}
 Formato: {fmt_clean}

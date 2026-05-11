@@ -99,9 +99,10 @@ def load_guia() -> str:
 
 
 def copy_section(text: str):
-    """Mostra o texto em bloco de código com botão de cópia nativo do Streamlit."""
-    st.caption("📋 Copiar legenda — clique no ícone no canto do campo abaixo:")
-    st.code(text, language=None)
+    """Campo somente-leitura para seleção e cópia fácil (Ctrl+A → Ctrl+C)."""
+    st.caption("📋 Copiar legenda — clique no campo abaixo e use Ctrl+A → Ctrl+C:")
+    st.text_area("copy", value=text, height=180,
+                 label_visibility="collapsed", disabled=True, key=f"copy_{hash(text) % 99999}")
 
 
 # ── Cached GitHub ─────────────────────────────────────────────────────────────
@@ -606,9 +607,9 @@ if S.selected_theme:
                 })
                 S.theme_status[theme["num"]] = "aprovado"
                 S.caption_versions = []
-                S.selected_theme   = None
                 S.caption_key     += 1
-                st.success(f"✅ Adicionado! {len(S.document)} conteúdo(s) no documento.")
+                # Não limpa selected_theme — usuário vê mensagem e escolhe o próximo
+                st.success(f"✅ Adicionado! {len(S.document)} conteúdo(s) no documento. Clique em outro tema na tabela acima para continuar.")
                 st.rerun()
 
         with b_regen:
@@ -617,10 +618,9 @@ if S.selected_theme:
                 st.rerun()
 
         with b_clear:
-            if st.button("🗑️", use_container_width=True, help="Descartar"):
+            if st.button("🗑️", use_container_width=True, help="Descartar legenda"):
                 S.caption_versions = []
                 S.caption_key     += 1
-                S.selected_theme   = None
                 st.rerun()
 
 
