@@ -7,18 +7,19 @@ from __future__ import annotations
 import os
 import re
 import time
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
-# Códigos HTTP que indicam limite temporário (vale tentar o próximo modelo)
-_RETRYABLE = ("429", "resource_exhausted", "resourceexhausted", "quota", "rateerror")
+# Códigos que indicam limite temporário (vale tentar o próximo modelo)
+_RETRYABLE = ("429", "resource_exhausted", "resourceexhausted", "quota", "rateerror", "rate_limit")
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Gemini; em quota/rate-limit usa fallbacks."""
+    """Chama Gemini via SDK novo (google-genai); fallback automático entre modelos."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError(
@@ -26,9 +27,9 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
             "Obtenha gratuitamente em https://ai.google.dev e adicione ao arquivo .env"
         )
 
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
-    generation_config = genai.types.GenerationConfig(
+    config = types.GenerateContentConfig(
         max_output_tokens=max_tokens,
         temperature=temperature,
     )
@@ -36,16 +37,18 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
     last_error = None
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
         try:
-            model = genai.GenerativeModel(model_name, generation_config=generation_config)
-            response = model.generate_content(prompt)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
             return response.text
         except Exception as e:
             err_str = str(e).lower()
             if any(code in err_str for code in _RETRYABLE):
                 last_error = e
-                time.sleep(2)   # pequena pausa antes do fallback
+                time.sleep(2)
                 continue
-            # Erro não relacionado a quota — propaga com mensagem clara
             raise RuntimeError(
                 f"Erro na API Gemini ({model_name}):\n{e}\n\n"
                 "Verifique se a GOOGLE_API_KEY está correta e se a "
