@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, FORMATOS_VISUAIS
+from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, FORMATOS_VISUAIS, MODEL_PRIMARY
 from generator import (
     extract_context_and_objectives,
     generate_themes,
@@ -179,7 +179,15 @@ S = st.session_state  # alias curto
 # HEADER
 # ══════════════════════════════════════════════════════════════════════════════
 
-st.markdown("## 🎯 Studio de Conteúdo")
+col_title, col_model = st.columns([5, 2])
+col_title.markdown("## 🎯 Studio de Conteúdo")
+with col_model:
+    key_ok = bool(os.getenv("GOOGLE_API_KEY"))
+    st.markdown(
+        f"<div style='text-align:right; padding-top:14px; font-size:0.8rem; color:{'#27ae60' if key_ok else '#e74c3c'}'>"
+        f"{'✅' if key_ok else '❌'} {MODEL_PRIMARY}</div>",
+        unsafe_allow_html=True,
+    )
 st.divider()
 
 
