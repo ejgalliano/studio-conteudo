@@ -1,5 +1,5 @@
 """
-Todas as chamadas à API Groq.
+Todas as chamadas à API Gemini (REST v1beta).
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ _RETRYABLE  = (429, 503)
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Gemini via REST v1 (sem SDK); fallback automático entre modelos."""
+    """Chama Gemini via REST v1beta (sem SDK); fallback automático entre modelos."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError(
@@ -33,6 +33,13 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
             "maxOutputTokens": max_tokens,
             "temperature": temperature,
         },
+        # Desativa filtros de segurança que bloqueiam conteúdo de marketing legítimo
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+        ],
     }
 
     last_error = None
@@ -279,6 +286,9 @@ PERSONAS:
     for i, (pilar, emoji, qtd, inicio) in enumerate(batches):
         if progress_callback:
             progress_callback(pilar, i + 1, total)
+
+        if i > 0:
+            time.sleep(4)  # respeita limite de 15 req/min do plano gratuito Gemini
 
         raw = _generate_batch(context_block, pilar, emoji, qtd, inicio)
 

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, FORMATOS_VISUAIS, MODEL_PRIMARY
+from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, FORMATOS_VISUAIS, MODEL_PRIMARY, SUB_BATCH_SIZE
 from generator import (
     extract_context_and_objectives,
     generate_themes,
@@ -366,9 +366,10 @@ else:
         n_inf  = st.number_input("🟢 Informativo",   min_value=0, max_value=200, value=35, step=5)
 
     total_temas = n_com + n_ins + n_inf
-    from constants import SUB_BATCH_SIZE
     n_lotes = -(-total_temas // SUB_BATCH_SIZE)  # ceil division
-    st.caption(f"Total: {total_temas} temas · {n_lotes} chamadas à IA · estimativa: {n_lotes * 15 // 60}–{n_lotes * 25 // 60 + 1} minutos")
+    t_min = max(1, n_lotes * 20 // 60)
+    t_max = max(2, n_lotes * 35 // 60 + 1)
+    st.caption(f"Total: {total_temas} temas · {n_lotes} chamadas à IA · estimativa: {t_min}–{t_max} minutos")
 
     if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True,
                  disabled=total_temas == 0):
