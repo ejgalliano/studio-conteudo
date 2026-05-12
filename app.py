@@ -647,8 +647,29 @@ if S.selected_theme:
 
         with b_regen:
             if st.button("🔄 Gerar nova versão", use_container_width=True):
-                S.caption_key += 1
-                st.rerun()
+                with st.spinner("Gerando nova versão..."):
+                    try:
+                        cap2 = generate_caption(
+                            theme=theme,
+                            formato=S.active_format,
+                            client_name=S.client_name,
+                            contexto=S.contexto,
+                            objetivos=S.objetivos,
+                            mapa=S.mapa,
+                            proposta=S.proposta,
+                            personas=S.personas,
+                            guia=guia,
+                            tom=S.active_tom,
+                            estilo=S.active_estilo,
+                            formato_visual=S.active_formato_visual,
+                        )
+                        S.caption_versions = ([cap2] + S.caption_versions)[:3]
+                        S.caption_ver_idx  = 0
+                        S.caption_key     += 1
+                        S.theme_drafts[theme["num"]] = cap2
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
 
         with b_clear:
             if st.button("🗑️", use_container_width=True, help="Descartar legenda"):

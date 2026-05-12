@@ -302,21 +302,33 @@ def generate_caption(
     tom_desc     = TONS.get(tom, "")
     estilo_desc  = ESTILOS.get(estilo, "")
 
+    # Instrução explícita de exclusão de formatos não solicitados
+    _nao_usar = []
+    if "Carrossel" not in fmt_clean: _nao_usar.append("Cards do Carrossel")
+    if "Reels"     not in fmt_clean: _nao_usar.append("Roteiro de Reels")
+    if "Stories"   not in fmt_clean: _nao_usar.append("Sequencia de Stories")
+    if "Trafego" not in fmt_clean and "Pago" not in fmt_clean: _nao_usar.append("Anuncio Pago")
+    exclusao = f"NAO inclua as secoes: {', '.join(_nao_usar)}." if _nao_usar else ""
+
     prompt = f"""Você é um especialista em marketing de conteúdo para redes sociais.
 Crie exatamente UM conteúdo completo para o tema abaixo. Apenas um, não mais.
 
 {_NO_MARKDOWN}
 
-GUIA DE CRIAÇÃO:
-{guia}
-
-CLIENTE: {client_name}
-{ctx}
+FORMATO OBRIGATORIO: {fmt_clean}
+O conteudo deve ser estruturado EXCLUSIVAMENTE como {fmt_clean}. {exclusao}
+Ignore qualquer sugestao de formato diferente de {fmt_clean}.
 
 DIRECAO CRIATIVA:
 Tom de Voz: {tom} — {tom_desc}
 Estilo de Estrutura: {estilo} — {estilo_desc}
 Formato Visual: {formato_visual}
+
+GUIA DE CRIACAO:
+{guia}
+
+CLIENTE: {client_name}
+{ctx}
 
 SOLICITACAO (apenas UM post):
 Tema: {theme['tema']}
@@ -324,7 +336,7 @@ Pilar: {theme['pilar']}
 Formato: {fmt_clean}
 Persona-alvo: {theme['persona']}
 
-Siga a estrutura do guia para o formato {fmt_clean} e aplique rigorosamente o tom "{tom}", o estilo "{estilo}" e o formato visual "{formato_visual}". Inclua obrigatoriamente:
+Aplique rigorosamente o tom "{tom}", o estilo "{estilo}" e o formato visual "{formato_visual}". Inclua obrigatoriamente:
 
 TEMA
 [nome do tema]
@@ -361,7 +373,7 @@ INSTRUCOES PARA DESIGN
 {"SEQUENCIA DE STORIES" + chr(10) + "[Story 1 a 5 com recurso interativo de cada]" if "Stories" in fmt_clean else ""}
 {"ANUNCIO PAGO" + chr(10) + "[Texto primario 125 car. — Headline 40 car. — Descricao 30 car. — Botao CTA — Publico sugerido]" if "Trafego" in fmt_clean or "Pago" in fmt_clean else ""}
 
-Escreva em portugues brasileiro. Tom: profissional, acessivel, direto — nunca corporativo."""
+Escreva em portugues brasileiro."""
 
     raw = _chat([{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.7)
     return clean_text(raw)
