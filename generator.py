@@ -7,19 +7,18 @@ from __future__ import annotations
 import os
 import re
 import time
-from google import genai
-from google.genai import types
+import requests as _requests
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
-# Códigos que indicam limite temporário (vale tentar o próximo modelo)
-_RETRYABLE = ("429", "resource_exhausted", "resourceexhausted", "quota", "rateerror", "rate_limit")
+_GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
+_RETRYABLE  = (429, 503)
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Gemini via SDK novo (google-genai); fallback automático entre modelos."""
+    """Chama Gemini via REST v1 (sem SDK); fallback automático entre modelos."""
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError(
@@ -27,33 +26,41 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
             "Obtenha gratuitamente em https://ai.google.dev e adicione ao arquivo .env"
         )
 
-    client = genai.Client(api_key=api_key)
     prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
-    config = types.GenerateContentConfig(
-        max_output_tokens=max_tokens,
-        temperature=temperature,
-    )
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+        },
+    }
 
     last_error = None
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
         try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config,
-            )
-            return response.text
-        except Exception as e:
-            err_str = str(e).lower()
-            if any(code in err_str for code in _RETRYABLE):
-                last_error = e
+            url  = _GEMINI_URL.format(model=model_name)
+            resp = _requests.post(url, json=payload, params={"key": api_key}, timeout=120)
+
+            if resp.status_code in _RETRYABLE:
+                last_error = RuntimeError(f"HTTP {resp.status_code} — {resp.text[:200]}")
                 time.sleep(2)
                 continue
-            raise RuntimeError(
-                f"Erro na API Gemini ({model_name}):\n{e}\n\n"
-                "Verifique se a GOOGLE_API_KEY está correta e se a "
-                "Generative Language API está ativa no projeto."
-            ) from e
+
+            if not resp.ok:
+                raise RuntimeError(
+                    f"Erro na API Gemini ({model_name}) — HTTP {resp.status_code}:\n"
+                    f"{resp.text[:400]}\n\n"
+                    "Verifique se a GOOGLE_API_KEY está correta e se a "
+                    "Generative Language API está ativa no projeto."
+                )
+
+            data = resp.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Erro inesperado chamando Gemini ({model_name}): {e}") from e
 
     raise RuntimeError(
         "Limite de requisições atingido em todos os modelos Gemini.\n\n"
