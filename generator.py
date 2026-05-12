@@ -2,6 +2,8 @@
 Todas as chamadas à API Groq.
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
+from __future__ import annotations
+
 import os
 import re
 from groq import Groq
