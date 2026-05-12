@@ -79,42 +79,76 @@ _NO_MARKDOWN = (
 
 def extract_context_and_objectives(transcricao: str) -> tuple[str, str]:
     """
-    Lê a transcrição e retorna (contexto, objetivos) como texto limpo.
-    contexto = quem é o cliente (mercado, produtos, diferenciais, tom de voz)
-    objetivos = o que quer alcançar nas redes sociais
+    Lê a transcrição e retorna (contexto_IBA, objetivos_redes_sociais).
+    contexto = relatório IBA estruturado (WSI Initial Business Assessment)
+    objetivos = metas específicas de marketing digital / redes sociais
     """
-    prompt = f"""Você é um estrategista de marketing digital. Leia a transcrição abaixo e extraia duas coisas:
 
-1. CONTEXTO DO CLIENTE: quem é, em qual mercado atua, o que vende, diferenciais, tom de voz, público-alvo.
-2. OBJETIVOS: o que o cliente quer alcançar com as redes sociais, metas específicas, restrições e preferências.
+    # ── Prompt 1: Relatório IBA ──
+    prompt_iba = f"""Aja como um Consultor Sênior da WSI especializado em diagnósticos empresariais (IBA - Initial Business Assessment). Sua tarefa é analisar a transcrição de uma reunião anexada abaixo e extrair informações detalhadas para preencher um relatório de avaliação preliminar.
+
+DIRETRIZES DE ANÁLISE:
+1. PROFUNDIDADE: Extraia o máximo de detalhes possível, incluindo nuances da fala do cliente e citações diretas relevantes que demonstrem pontos de dor ou objetivos.
+2. TOM DE VOZ: Utilize uma linguagem formal, consultiva e profissional (Estilo WSI).
+3. ESTRUTURA: Organize a saída estritamente em tópicos (bullet points) seguindo as categorias do guia IBA.
+
+CATEGORIAS PARA EXTRAÇÃO (Baseadas no Guia IBA):
+
+1. Histórico e Visão Geral Organizacional
+(Origem, tempo de mercado, estrutura atual)
+
+2. Revisão de Negócios (Produtos e Serviços)
+(O que oferecem, diferenciais competitivos, mix de produtos)
+
+3. Mercado e Competição
+(Público-alvo, posicionamento e principais concorrentes mencionados)
+
+4. Saúde Financeira
+(Desempenho geral, faturamento, margens ou desafios financeiros citados)
+
+5. Operações
+(Processos internos, eficiência operacional e gargalos)
+
+6. Marketing e Vendas
+(Estratégias atuais, canais utilizados e desempenho comercial)
+
+7. Recursos Humanos
+(Satisfação com a equipe, estrutura organizacional e cultura)
+
+8. Desafios Estratégicos e Metas
+(Principais obstáculos para o crescimento e objetivos de curto/médio prazo)
+
+9. Insights Adicionais
+(Qualquer informação crítica que não se encaixe nas categorias acima)
+
+INSTRUÇÃO ADICIONAL:
+Se alguma informação não tiver sido mencionada na transcrição, indique como "[Informação não abordada na reunião]". Ao final, destaque as 3 maiores oportunidades de crescimento identificadas com base na conversa.
+
+TRANSCRIÇÃO:
+{transcricao[:7000]}"""
+
+    # ── Prompt 2: Objetivos de redes sociais ──
+    prompt_obj = f"""Com base na transcrição abaixo, extraia apenas os objetivos, metas e expectativas do cliente relacionados a marketing digital e redes sociais.
 
 {_NO_MARKDOWN}
 
 TRANSCRIÇÃO:
-{transcricao[:6000]}
+{transcricao[:4000]}
 
-Retorne EXATAMENTE neste formato:
+Retorne um texto corrido (sem marcadores especiais) com:
+- O que o cliente quer alcançar nas redes sociais
+- Metas de curto e médio prazo para presença digital
+- Restrições, preferências e o que não fazer
+- Tom de voz desejado para a comunicação
 
-CONTEXTO
-[Texto corrido descrevendo quem é o cliente, mercado de atuação, produtos e serviços, diferenciais, público-alvo e tom de voz. Mínimo 5 linhas.]
+Se não houver informação suficiente, deduza com base no perfil do negócio descrito.
+Seja específico e use apenas informações da transcrição. Escreva em português brasileiro."""
 
-OBJETIVOS
-[Texto corrido com os objetivos nas redes sociais, metas, o que não fazer e preferências mencionadas. Mínimo 3 linhas.]
+    contexto  = _chat([{"role": "user", "content": prompt_iba}],  max_tokens=2500, temperature=0.2)
+    objetivos = _chat([{"role": "user", "content": prompt_obj}],  max_tokens=1000, temperature=0.3)
+    objetivos = clean_text(objetivos)
 
-Seja específico. Use apenas informações da transcrição. Não invente dados."""
-
-    raw = _chat([{"role": "user", "content": prompt}], max_tokens=1500, temperature=0.3)
-    raw = clean_text(raw)
-
-    contexto, objetivos = "", ""
-    if "OBJETIVOS" in raw:
-        partes = raw.split("OBJETIVOS", 1)
-        contexto = partes[0].replace("CONTEXTO", "").strip()
-        objetivos = partes[1].strip()
-    else:
-        contexto = raw
-
-    return contexto, objetivos
+    return contexto.strip(), objetivos.strip()
 
 
 # ── Themes ────────────────────────────────────────────────────────────────────
