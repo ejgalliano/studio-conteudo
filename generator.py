@@ -244,20 +244,20 @@ def generate_themes(
 ) -> str:
     context_block = f"""CLIENTE: {client_name}
 
-CONTEXTO:
-{contexto[:1500]}
+CONTEXTO DO NEGOCIO:
+{contexto[:3000]}
 
 OBJETIVOS:
-{objetivos[:1000]}
+{objetivos[:2000]}
 
 MAPA DE EMPATIA:
-{mapa[:1200]}
+{mapa[:3000]}
 
 PROPOSTA DE VALOR:
-{proposta[:1200]}
+{proposta[:3000]}
 
 PERSONAS:
-{personas[:1200]}"""
+{personas[:3000]}"""
 
     batches = _build_batches(n_comercial, n_institucional, n_informativo, n_engajamento, n_cases)
     total = len(batches)
@@ -306,11 +306,11 @@ def generate_caption(
     fmt_clean = formato.split(" ", 1)[1] if " " in formato else formato
 
     ctx = ""
-    if proposta: ctx += f"PROPOSTA DE VALOR:\n{proposta[:2000]}\n\n"
-    if personas: ctx += f"PERSONAS:\n{personas[:2000]}\n\n"
-    if mapa:     ctx += f"MAPA DE EMPATIA:\n{mapa[:1500]}\n\n"
-    if contexto: ctx += f"CONTEXTO DO CLIENTE:\n{contexto[:1000]}\n\n"
-    if objetivos: ctx += f"OBJETIVOS:\n{objetivos[:800]}\n\n"
+    if proposta: ctx += f"PROPOSTA DE VALOR:\n{proposta[:3000]}\n\n"
+    if personas: ctx += f"PERSONAS:\n{personas[:3000]}\n\n"
+    if mapa:     ctx += f"MAPA DE EMPATIA (dores e desejos):\n{mapa[:2000]}\n\n"
+    if contexto: ctx += f"CONTEXTO DO CLIENTE:\n{contexto[:1500]}\n\n"
+    if objetivos: ctx += f"OBJETIVOS:\n{objetivos[:1000]}\n\n"
 
     tom_desc    = TONS.get(tom, "")
     estilo_desc = ESTILOS.get(estilo, "")
