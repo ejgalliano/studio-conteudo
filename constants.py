@@ -22,46 +22,27 @@ PILAR_EMOJI = {
     "Informativo":   "🟢",
 }
 
-# ── Tom de voz ────────────────────────────────────────────────────────────────
+# ── Tom de voz (7 principais) ─────────────────────────────────────────────────
 TONS = {
-    "Profissional":          "Credibilidade, autoridade e clareza. Ideal para negócios, serviços técnicos, consultoria e anúncios de resultados.",
-    "Conversacional":        "Proximidade, naturalidade e humanização. Ideal para Stories, bastidores e dia a dia.",
-    "Inspiracional":         "Motivar e engajar emocionalmente. Ideal para posts de mentalidade, posicionamento e narrativa pessoal.",
-    "Educativo":             "Ensinar, explicar e gerar valor. Ideal para tutoriais, awareness e Reels educativos.",
-    "Humorístico":           "Viralizar, entreter e gerar identificação. Ideal para nichos mais leves, tendências e memes.",
-    "Direto":                "Conversões e CTAs claros. Ideal para anúncios, ofertas e captação de leads.",
-    "Emocional":             "Conexão profunda e storytelling. Ideal para campanhas de awareness, marca pessoal e cases.",
-    "Analítico/Estratégico": "Reforçar inteligência e tomada de decisão. Ideal para conteúdo avançado, marketing e gestão.",
-    "Energético/Motivador":  "Gerar hype e estimular ação. Ideal para lançamentos, anúncios e trends aceleradas.",
+    "Profissional":   "Autoridade, credibilidade e clareza. Ideal para B2B, consultoria, serviços técnicos e apresentação de resultados.",
+    "Conversacional": "Próximo, natural e humano. Ideal para Stories, bastidores, dia a dia e humanização da marca.",
+    "Inspiracional":  "Motivador e emocionante. Ideal para posicionamento, marca pessoal e conteúdo de mentalidade.",
+    "Educativo":      "Ensina, explica e gera valor genuíno. Ideal para tutoriais, dicas e conteúdo de awareness.",
+    "Direto":         "Objetivo, sem rodeios, foco em conversão. Ideal para anúncios, ofertas e CTAs de captação.",
+    "Emocional":      "Conexão profunda via narrativa e storytelling. Ideal para campanhas, cases e marca pessoal.",
+    "Humorístico":    "Leve, descontraído e com potencial viral. Ideal para trends, entretenimento e nichos mais jovens.",
 }
 
-# ── Estilo de estrutura ───────────────────────────────────────────────────────
+# ── Estilo de estrutura (7 principais) ───────────────────────────────────────
 ESTILOS = {
-    "Storytelling":          "Narrativa, jornada e transformação. Ex: 'Há alguns anos, um cliente me procurou porque...'",
-    "Bullet Points":         "Conteúdo escaneável, listas e dicas rápidas em tópicos curtos.",
-    "Microtexto":            "Short caption para Reels dinâmicos e impacto imediato. Máximo 2-3 linhas.",
-    "Long Form":             "Legenda longa com storytelling profundo, educação ou bastidores.",
-    "Memeável":              "Humor, identificação e trends. Tom leve e descontraído.",
-    "Pergunta Inicial":      "Abre com pergunta para gerar engajamento e reflexão.",
-    "Call to Action (CTA)":  "Foco total em conversão e direcionamento. Ex: 'Comente X que envio o link.'",
-    "Valor Direto":          "Conteúdo objetivo sem rodeios. Ex: '5 erros comuns e como evitar.'",
-    "Autoridade":            "Prova social e expertise. Destaca resultados, números e experiência.",
-    "Motivacional + Dados":  "Mistura inspiração com inteligência e dados concretos.",
+    "Storytelling":       "Narrativa com início, conflito e transformação. Ex: 'Há 3 anos um cliente me ligou às 23h porque...'",
+    "Lista de Dicas":     "Conteúdo escaneável em tópicos numerados. Ex: '5 erros que todo empreendedor comete em...'",
+    "Pergunta + Resposta": "Abre com pergunta provocativa e responde ao longo do post. Ex: 'Você sabia que 80% das empresas erram nisso?'",
+    "Antes e Depois":     "Mostra transformação ou contraste de resultado. Ex: 'Antes: 10k/mês. Depois: 47k/mês. O que mudou?'",
+    "Passo a Passo":      "Sequência de ações claras e acionáveis. Ex: 'Como fazer X em 4 passos simples:'",
+    "Dado + Insight":     "Abre com estatística impactante e analisa o significado. Ex: '87% dos consumidores pesquisam online antes de comprar.'",
+    "CTA Direto":         "Foco total em conversão desde a primeira linha. Ex: 'Quer dobrar seus leads esse mês? Faz isso agora:'",
 }
-
-# ── Formato visual ────────────────────────────────────────────────────────────
-FORMATOS_VISUAIS = [
-    "Frases de impacto",
-    "Quebra de linhas com respiro",
-    "Emojis estratégicos",
-    "Estilo carrossel (legenda complementa os slides)",
-    "Mini copywriting com gatilhos (prova, urgência, benefício)",
-    "Formato FAQ",
-    "Checklist",
-    "Mito vs. Verdade",
-    "Antes e Depois",
-    "Guia passo a passo",
-]
 
 # Arquivos de cada cliente no GitHub
 CLIENT_FILES = [

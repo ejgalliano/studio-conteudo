@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, FORMATOS_VISUAIS, MODEL_PRIMARY, SUB_BATCH_SIZE
+from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, MODEL_PRIMARY, SUB_BATCH_SIZE
 from generator import (
     extract_context_and_objectives,
     generate_themes,
@@ -150,9 +150,8 @@ DEFAULTS = {
     # caption panel
     "selected_theme":       None,
     "active_format":        FORMATS[0],
-    "active_tom":           list(TONS.keys())[0],
-    "active_estilo":        list(ESTILOS.keys())[0],
-    "active_formato_visual": FORMATOS_VISUAIS[0],
+    "active_tom":    list(TONS.keys())[0],
+    "active_estilo": list(ESTILOS.keys())[0],
     "caption_versions":     [],   # list of str (last 3)
     "caption_ver_idx":      0,    # index being shown
     "caption_key":          0,    # incrementa para forçar re-render
@@ -522,9 +521,9 @@ if S.selected_theme:
                 S.caption_key += 1
                 st.rerun()
 
-    # ── Tom / Estilo / Formato Visual ──
-    st.markdown("**Tom, estilo e formato visual:**")
-    tc, ec, fvc = st.columns(3)
+    # ── Tom / Estilo ──
+    st.markdown("**Tom e estilo:**")
+    tc, ec = st.columns(2)
     with tc:
         tom_idx = list(TONS.keys()).index(S.active_tom) if S.active_tom in TONS else 0
         S.active_tom = st.selectbox(
@@ -540,13 +539,6 @@ if S.selected_theme:
             list(ESTILOS.keys()),
             index=estilo_idx,
             help=ESTILOS.get(S.active_estilo, ""),
-        )
-    with fvc:
-        fv_idx = FORMATOS_VISUAIS.index(S.active_formato_visual) if S.active_formato_visual in FORMATOS_VISUAIS else 0
-        S.active_formato_visual = st.selectbox(
-            "🟡 Formato Visual",
-            FORMATOS_VISUAIS,
-            index=fv_idx,
         )
 
     # ── Generate ──
@@ -565,7 +557,6 @@ if S.selected_theme:
                     guia=guia,
                     tom=S.active_tom,
                     estilo=S.active_estilo,
-                    formato_visual=S.active_formato_visual,
                 )
                 # Adiciona ao histórico (máximo 3 versões)
                 S.caption_versions = ([cap] + S.caption_versions)[:3]
@@ -670,7 +661,6 @@ if S.selected_theme:
                             guia=guia,
                             tom=S.active_tom,
                             estilo=S.active_estilo,
-                            formato_visual=S.active_formato_visual,
                         )
                         S.caption_versions = ([cap2] + S.caption_versions)[:3]
                         S.caption_ver_idx  = 0

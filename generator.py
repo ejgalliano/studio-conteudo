@@ -295,8 +295,7 @@ def generate_caption(
     personas: str,
     guia: str,
     tom: str = "Profissional",
-    estilo: str = "Bullet Points",
-    formato_visual: str = "Frases de impacto",
+    estilo: str = "Lista de Dicas",
 ) -> str:
     fmt_clean = formato.split(" ", 1)[1] if " " in formato else formato
 
@@ -304,13 +303,25 @@ def generate_caption(
     if proposta: ctx += f"PROPOSTA DE VALOR:\n{proposta[:2000]}\n\n"
     if personas: ctx += f"PERSONAS:\n{personas[:2000]}\n\n"
     if mapa:     ctx += f"MAPA DE EMPATIA:\n{mapa[:1500]}\n\n"
-    if contexto: ctx += f"CONTEXTO:\n{contexto[:1000]}\n\n"
+    if contexto: ctx += f"CONTEXTO DO CLIENTE:\n{contexto[:1000]}\n\n"
     if objetivos: ctx += f"OBJETIVOS:\n{objetivos[:800]}\n\n"
 
-    tom_desc     = TONS.get(tom, "")
-    estilo_desc  = ESTILOS.get(estilo, "")
+    tom_desc    = TONS.get(tom, "")
+    estilo_desc = ESTILOS.get(estilo, "")
 
-    # Instrução explícita de exclusão de formatos não solicitados
+    # Gatilho mental e CTA por pilar
+    pilar_lower = theme['pilar'].lower()
+    if "comercial" in pilar_lower:
+        gatilho = "prova social, escassez ou urgência"
+        cta_sugerido = "direcione para WhatsApp, link na bio ou 'Comente X para saber mais'"
+    elif "institucional" in pilar_lower:
+        gatilho = "pertencimento, autoridade ou bastidores"
+        cta_sugerido = "incentive curtir, seguir, compartilhar ou marcar alguém"
+    else:
+        gatilho = "curiosidade, utilidade ou exclusividade da informação"
+        cta_sugerido = "incentive salvar o post ou compartilhar com quem precisa"
+
+    # Exclusão explícita de seções de outros formatos
     _nao_usar = []
     if "Carrossel" not in fmt_clean: _nao_usar.append("Cards do Carrossel")
     if "Reels"     not in fmt_clean: _nao_usar.append("Roteiro de Reels")
@@ -318,33 +329,43 @@ def generate_caption(
     if "Trafego" not in fmt_clean and "Pago" not in fmt_clean: _nao_usar.append("Anuncio Pago")
     exclusao = f"NAO inclua as secoes: {', '.join(_nao_usar)}." if _nao_usar else ""
 
-    prompt = f"""Você é um especialista em marketing de conteúdo para redes sociais.
-Crie exatamente UM conteúdo completo para o tema abaixo. Apenas um, não mais.
+    prompt = f"""Você é um copywriter sênior especialista em marketing digital para redes sociais no Brasil.
+Sua missão: criar conteúdo que para o scroll, gera engajamento real e converte.
+Crie exatamente UM conteudo completo. Apenas um, nao mais.
 
 {_NO_MARKDOWN}
 
 FORMATO OBRIGATORIO: {fmt_clean}
 O conteudo deve ser estruturado EXCLUSIVAMENTE como {fmt_clean}. {exclusao}
-Ignore qualquer sugestao de formato diferente de {fmt_clean}.
 
-DIRECAO CRIATIVA:
-Tom de Voz: {tom} — {tom_desc}
-Estilo de Estrutura: {estilo} — {estilo_desc}
-Formato Visual: {formato_visual}
+DIRECAO CRIATIVA
+Tom de Voz: {tom}
+{tom_desc}
 
-GUIA DE CRIACAO:
-{guia}
+Estilo de Estrutura: {estilo}
+{estilo_desc}
 
-CLIENTE: {client_name}
+TECNICAS OBRIGATORIAS
+- Hook: primeira frase deve parar o scroll em menos de 3 segundos. Maximo 10 palavras. Sem introducoes.
+- Gatilho mental para este pilar ({theme['pilar']}): use {gatilho}
+- CTA: {cta_sugerido}
+- Escreva diretamente PARA a persona, como se estivesse conversando com ela
+- Proibido: cliches corporativos ("solucoes inovadoras", "excelencia", "qualidade superior")
+- Prefira linguagem simples, direta e em portugues brasileiro coloquial
+
+INFORMACOES DO CLIENTE: {client_name}
 {ctx}
 
-SOLICITACAO (apenas UM post):
+GUIA DE CRIACAO DO FORMATO:
+{guia}
+
+SOLICITACAO
 Tema: {theme['tema']}
 Pilar: {theme['pilar']}
 Formato: {fmt_clean}
 Persona-alvo: {theme['persona']}
 
-Aplique rigorosamente o tom "{tom}", o estilo "{estilo}" e o formato visual "{formato_visual}". Inclua obrigatoriamente:
+Estruture o conteudo com as secoes abaixo:
 
 TEMA
 [nome do tema]
@@ -358,32 +379,30 @@ FORMATO
 PERSONA-ALVO
 [persona]
 
-OBJETIVO
-[objetivo do post]
+OBJETIVO DO POST
+[o que este post deve gerar: venda, lead, engajamento, educacao, etc.]
 
 HOOK
-[frase de abertura impactante, maximo 10 palavras]
+[primeira frase — maximo 10 palavras — sem introducao — impacto imediato]
 
 TITULO DO POST
-[titulo chamativo]
+[titulo chamativo para o visual]
 
 LEGENDA
-[legenda completa com emojis, CTA, maximo 750 caracteres]
+[legenda completa, com emojis estrategicos, CTA claro no final — maximo 750 caracteres]
 
 HASHTAGS
-[ate 5 hashtags]
+[3 a 5 hashtags relevantes e especificas, nao genericas]
 
 INSTRUCOES PARA DESIGN
-[orientacoes visuais]
+[orientacoes visuais: cores, imagem, texto na arte]
 
-{"CARDS DO CARROSSEL" + chr(10) + "[Card 1: capa — Card 2... — Ultimo card: CTA]" if "Carrossel" in fmt_clean else ""}
-{"ROTEIRO DO REELS" + chr(10) + "[Cena 1, Cena 2... CTA final — Trilha sugerida]" if "Reels" in fmt_clean else ""}
-{"SEQUENCIA DE STORIES" + chr(10) + "[Story 1 a 5 com recurso interativo de cada]" if "Stories" in fmt_clean else ""}
-{"ANUNCIO PAGO" + chr(10) + "[Texto primario 125 car. — Headline 40 car. — Descricao 30 car. — Botao CTA — Publico sugerido]" if "Trafego" in fmt_clean or "Pago" in fmt_clean else ""}
+{"CARDS DO CARROSSEL" + chr(10) + "[Card 1 (capa): hook visual — Cards 2 a N: desenvolvimento — Ultimo card: CTA]" if "Carrossel" in fmt_clean else ""}
+{"ROTEIRO DO REELS" + chr(10) + "[Cena 1 (0-3s): hook — Cenas seguintes: conteudo — Cena final: CTA — Trilha sugerida]" if "Reels" in fmt_clean else ""}
+{"SEQUENCIA DE STORIES" + chr(10) + "[Story 1: gancho — Stories 2-4: desenvolvimento — Story 5: CTA com recurso interativo]" if "Stories" in fmt_clean else ""}
+{"ANUNCIO PAGO" + chr(10) + "[Texto primario: max 125 car. — Headline: max 40 car. — Descricao: max 30 car. — Botao CTA — Publico sugerido]" if "Trafego" in fmt_clean or "Pago" in fmt_clean else ""}"""
 
-Escreva em portugues brasileiro."""
-
-    raw = _chat([{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.7)
+    raw = _chat([{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.75)
     return clean_text(raw)
 
 
