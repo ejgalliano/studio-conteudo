@@ -44,30 +44,35 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
 
     last_error = None
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
-        try:
-            url  = _GEMINI_URL.format(model=model_name)
-            resp = _requests.post(url, json=payload, params={"key": api_key}, timeout=120)
+        # Tenta até 2 vezes o mesmo modelo antes de passar pro próximo
+        for attempt in range(2):
+            try:
+                url  = _GEMINI_URL.format(model=model_name)
+                resp = _requests.post(url, json=payload, params={"key": api_key}, timeout=120)
 
-            if resp.status_code in _RETRYABLE:
-                last_error = RuntimeError(f"HTTP {resp.status_code} — {resp.text[:200]}")
-                time.sleep(2)
-                continue
+                if resp.status_code in _RETRYABLE:
+                    wait = 15 if attempt == 0 else 30
+                    last_error = RuntimeError(f"HTTP {resp.status_code} em {model_name}")
+                    time.sleep(wait)
+                    continue  # retry mesmo modelo
 
-            if not resp.ok:
-                raise RuntimeError(
-                    f"Erro na API Gemini ({model_name}) — HTTP {resp.status_code}:\n"
-                    f"{resp.text[:400]}\n\n"
-                    "Verifique se a GOOGLE_API_KEY está correta e se a "
-                    "Generative Language API está ativa no projeto."
-                )
+                if not resp.ok:
+                    raise RuntimeError(
+                        f"Erro na API Gemini ({model_name}) — HTTP {resp.status_code}:\n"
+                        f"{resp.text[:400]}\n\n"
+                        "Verifique se a GOOGLE_API_KEY está correta e se a "
+                        "Generative Language API está ativa no projeto."
+                    )
 
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
 
-        except RuntimeError:
-            raise
-        except Exception as e:
-            raise RuntimeError(f"Erro inesperado chamando Gemini ({model_name}): {e}") from e
+            except RuntimeError:
+                raise
+            except Exception as e:
+                raise RuntimeError(f"Erro inesperado chamando Gemini ({model_name}): {e}") from e
+        # Esgotou retries neste modelo — tenta o próximo
+        continue
 
     raise RuntimeError(
         "Limite de requisições atingido em todos os modelos Gemini.\n\n"
@@ -190,6 +195,7 @@ TRANSCRIÇÃO:
 {transcricao[:5000]}"""
 
     contexto  = _chat([{"role": "user", "content": prompt_iba}], max_tokens=2500, temperature=0.2)
+    time.sleep(5)  # pausa entre chamadas para não bater rate limit
     objetivos = _chat([{"role": "user", "content": prompt_obj}], max_tokens=1500, temperature=0.2)
 
     return contexto.strip(), objetivos.strip()
