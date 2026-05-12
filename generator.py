@@ -6,43 +6,51 @@ from __future__ import annotations
 
 import os
 import re
-from groq import Groq
+import google.generativeai as genai
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
 
-# ── Client & chat ─────────────────────────────────────────────────────────────
-
-def _client() -> Groq:
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY não encontrada. Verifique o arquivo .env")
-    return Groq(api_key=api_key)
-
+# ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Tenta modelo principal; em rate-limit usa fallbacks."""
-    client = _client()
+    """Chama Gemini; em quota/rate-limit usa fallbacks."""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "GOOGLE_API_KEY não encontrada.\n"
+            "Obtenha gratuitamente em https://ai.google.dev e adicione ao arquivo .env"
+        )
+
+    # Nossa interface sempre envia uma lista com uma única mensagem de usuário
+    prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
+
+    generation_config = genai.types.GenerationConfig(
+        max_output_tokens=max_tokens,
+        temperature=temperature,
+    )
+
     last_error = None
-    for model in [MODEL_PRIMARY] + MODEL_FALLBACKS:
+    for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel(
+                model_name,
+                generation_config=generation_config,
             )
-            return resp.choices[0].message.content
+            response = model.generate_content(prompt)
+            return response.text
         except Exception as e:
-            if "429" in str(e) or "rate_limit" in str(e).lower():
+            err = str(e).lower()
+            if "429" in str(e) or "quota" in err or "rate" in err or "exhausted" in err:
                 last_error = e
                 continue
             raise
+
     raise RuntimeError(
-        "Limite diário de tokens atingido em todos os modelos.\n\n"
-        "O plano gratuito do Groq permite 100.000 tokens por dia. "
-        "O limite reseta à meia-noite (horário de Brasília). "
-        "Tente novamente mais tarde."
+        "Limite de quota atingido em todos os modelos Gemini.\n\n"
+        "O plano gratuito do Google AI Studio permite 1.000.000 de tokens por dia. "
+        "O limite reseta à meia-noite (UTC). Tente novamente mais tarde."
     ) from last_error
 
 

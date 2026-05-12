@@ -364,8 +364,8 @@ else:
 
     if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True,
                  disabled=total_temas == 0):
-        if not os.getenv("GROQ_API_KEY"):
-            st.error("GROQ_API_KEY não configurada.")
+        if not os.getenv("GOOGLE_API_KEY"):
+            st.error("GOOGLE_API_KEY não configurada. Obtenha gratuitamente em https://ai.google.dev")
         else:
             pb = st.progress(0, text="Iniciando...")
             st_status = st.empty()
