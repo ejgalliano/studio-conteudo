@@ -8,7 +8,7 @@ import os
 import re
 from groq import Groq
 
-from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE
+from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
 
 # ── Client & chat ─────────────────────────────────────────────────────────────
@@ -286,6 +286,9 @@ def generate_caption(
     proposta: str,
     personas: str,
     guia: str,
+    tom: str = "Profissional",
+    estilo: str = "Bullet Points",
+    formato_visual: str = "Frases de impacto",
 ) -> str:
     fmt_clean = formato.split(" ", 1)[1] if " " in formato else formato
 
@@ -295,6 +298,9 @@ def generate_caption(
     if mapa:     ctx += f"MAPA DE EMPATIA:\n{mapa[:1500]}\n\n"
     if contexto: ctx += f"CONTEXTO:\n{contexto[:1000]}\n\n"
     if objetivos: ctx += f"OBJETIVOS:\n{objetivos[:800]}\n\n"
+
+    tom_desc     = TONS.get(tom, "")
+    estilo_desc  = ESTILOS.get(estilo, "")
 
     prompt = f"""Você é um especialista em marketing de conteúdo para redes sociais.
 Crie exatamente UM conteúdo completo para o tema abaixo. Apenas um, não mais.
@@ -307,13 +313,18 @@ GUIA DE CRIAÇÃO:
 CLIENTE: {client_name}
 {ctx}
 
+DIRECAO CRIATIVA:
+Tom de Voz: {tom} — {tom_desc}
+Estilo de Estrutura: {estilo} — {estilo_desc}
+Formato Visual: {formato_visual}
+
 SOLICITACAO (apenas UM post):
 Tema: {theme['tema']}
 Pilar: {theme['pilar']}
 Formato: {fmt_clean}
 Persona-alvo: {theme['persona']}
 
-Siga a estrutura do guia para o formato {fmt_clean}. Inclua obrigatoriamente:
+Siga a estrutura do guia para o formato {fmt_clean} e aplique rigorosamente o tom "{tom}", o estilo "{estilo}" e o formato visual "{formato_visual}". Inclua obrigatoriamente:
 
 TEMA
 [nome do tema]

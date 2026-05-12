@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from docx import Document as DocxDocument
 import fitz  # pymupdf
 
-from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES
+from constants import FORMATS, PILAR_EMOJI, PILARES, CLIENT_FILES, TONS, ESTILOS, FORMATOS_VISUAIS
 from generator import (
     extract_context_and_objectives,
     generate_themes,
@@ -148,11 +148,14 @@ DEFAULTS = {
     "theme_drafts":      {},   # {num: caption_text}
 
     # caption panel
-    "selected_theme":    None,
-    "active_format":     FORMATS[0],
-    "caption_versions":  [],   # list of str (last 3)
-    "caption_ver_idx":   0,    # index being shown
-    "caption_key":       0,    # incrementa para forçar re-render
+    "selected_theme":       None,
+    "active_format":        FORMATS[0],
+    "active_tom":           list(TONS.keys())[0],
+    "active_estilo":        list(ESTILOS.keys())[0],
+    "active_formato_visual": FORMATOS_VISUAIS[0],
+    "caption_versions":     [],   # list of str (last 3)
+    "caption_ver_idx":      0,    # index being shown
+    "caption_key":          0,    # incrementa para forçar re-render
 
     # document
     "document":          [],   # [{num, theme_num, tema, pilar, formato, conteudo}]
@@ -510,6 +513,33 @@ if S.selected_theme:
                 S.caption_key += 1
                 st.rerun()
 
+    # ── Tom / Estilo / Formato Visual ──
+    st.markdown("**Tom, estilo e formato visual:**")
+    tc, ec, fvc = st.columns(3)
+    with tc:
+        tom_idx = list(TONS.keys()).index(S.active_tom) if S.active_tom in TONS else 0
+        S.active_tom = st.selectbox(
+            "🔵 Tom de Voz",
+            list(TONS.keys()),
+            index=tom_idx,
+            help=TONS.get(S.active_tom, ""),
+        )
+    with ec:
+        estilo_idx = list(ESTILOS.keys()).index(S.active_estilo) if S.active_estilo in ESTILOS else 0
+        S.active_estilo = st.selectbox(
+            "🟣 Estilo de Estrutura",
+            list(ESTILOS.keys()),
+            index=estilo_idx,
+            help=ESTILOS.get(S.active_estilo, ""),
+        )
+    with fvc:
+        fv_idx = FORMATOS_VISUAIS.index(S.active_formato_visual) if S.active_formato_visual in FORMATOS_VISUAIS else 0
+        S.active_formato_visual = st.selectbox(
+            "🟡 Formato Visual",
+            FORMATOS_VISUAIS,
+            index=fv_idx,
+        )
+
     # ── Generate ──
     if st.button("⚡ Gerar Legenda", type="primary", use_container_width=True):
         with st.spinner("Gerando legenda..."):
@@ -524,6 +554,9 @@ if S.selected_theme:
                     proposta=S.proposta,
                     personas=S.personas,
                     guia=guia,
+                    tom=S.active_tom,
+                    estilo=S.active_estilo,
+                    formato_visual=S.active_formato_visual,
                 )
                 # Adiciona ao histórico (máximo 3 versões)
                 S.caption_versions = ([cap] + S.caption_versions)[:3]
