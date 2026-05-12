@@ -1,5 +1,5 @@
 """
-Todas as chamadas à API Gemini (REST v1beta).
+Todas as chamadas à API Groq (Llama 3.3 70B).
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
 from __future__ import annotations
@@ -7,77 +7,46 @@ from __future__ import annotations
 import os
 import re
 import time
-import requests as _requests
+from groq import Groq
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
-
-_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-_RETRYABLE  = (429, 503)
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Gemini via REST v1beta (sem SDK); fallback automático entre modelos."""
-    api_key = os.getenv("GOOGLE_API_KEY")
+    """Chama Groq; em rate-limit usa fallbacks automaticamente."""
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise ValueError(
-            "GOOGLE_API_KEY não encontrada.\n"
-            "Obtenha gratuitamente em https://ai.google.dev e adicione ao arquivo .env"
-        )
+        raise ValueError("GROQ_API_KEY não encontrada. Verifique o arquivo .env")
 
-    prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": max_tokens,
-            "temperature": temperature,
-        },
-        # Desativa filtros de segurança que bloqueiam conteúdo de marketing legítimo
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT",        "threshold": "BLOCK_ONLY_HIGH"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH",       "threshold": "BLOCK_ONLY_HIGH"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
-        ],
-    }
-
+    client = Groq(api_key=api_key)
     last_error = None
+
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
-        # Tenta até 2 vezes o mesmo modelo antes de passar pro próximo
         for attempt in range(2):
             try:
-                url  = _GEMINI_URL.format(model=model_name)
-                resp = _requests.post(url, json=payload, params={"key": api_key}, timeout=120)
-
-                if resp.status_code in _RETRYABLE:
-                    wait = 15 if attempt == 0 else 30
-                    last_error = RuntimeError(f"HTTP {resp.status_code} em {model_name}")
-                    time.sleep(wait)
-                    continue  # retry mesmo modelo
-
-                if not resp.ok:
-                    raise RuntimeError(
-                        f"Erro na API Gemini ({model_name}) — HTTP {resp.status_code}:\n"
-                        f"{resp.text[:400]}\n\n"
-                        "Verifique se a GOOGLE_API_KEY está correta e se a "
-                        "Generative Language API está ativa no projeto."
-                    )
-
-                data = resp.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-
-            except RuntimeError:
-                raise
+                resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                return resp.choices[0].message.content
             except Exception as e:
-                raise RuntimeError(f"Erro inesperado chamando Gemini ({model_name}): {e}") from e
-        # Esgotou retries neste modelo — tenta o próximo
+                if "429" in str(e) or "rate_limit" in str(e).lower():
+                    wait = 15 if attempt == 0 else 30
+                    last_error = e
+                    time.sleep(wait)
+                    continue
+                raise
         continue
 
     raise RuntimeError(
-        "Limite de requisições atingido em todos os modelos Gemini.\n\n"
-        "O plano gratuito permite 15 requisições/minuto e 1.000.000 tokens/dia. "
-        "Aguarde 1 minuto e tente novamente."
+        "Limite diário de tokens atingido em todos os modelos.\n\n"
+        "O plano gratuito do Groq permite 100.000 tokens por dia. "
+        "O limite reseta à meia-noite (horário de Brasília). "
+        "Tente novamente mais tarde."
     ) from last_error
 
 

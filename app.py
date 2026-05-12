@@ -182,7 +182,7 @@ S = st.session_state  # alias curto
 col_title, col_model = st.columns([5, 2])
 col_title.markdown("## 🎯 Studio de Conteúdo")
 with col_model:
-    key_ok = bool(os.getenv("GOOGLE_API_KEY"))
+    key_ok = bool(os.getenv("GROQ_API_KEY"))
     st.markdown(
         f"<div style='text-align:right; padding-top:14px; font-size:0.8rem; color:{'#27ae60' if key_ok else '#e74c3c'}'>"
         f"{'✅' if key_ok else '❌'} {MODEL_PRIMARY}</div>",
@@ -373,8 +373,8 @@ else:
 
     if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True,
                  disabled=total_temas == 0):
-        if not os.getenv("GOOGLE_API_KEY"):
-            st.error("GOOGLE_API_KEY não configurada. Obtenha gratuitamente em https://ai.google.dev")
+        if not os.getenv("GROQ_API_KEY"):
+            st.error("GROQ_API_KEY não configurada. Obtenha gratuitamente em https://console.groq.com")
         else:
             pb = st.progress(0, text="Iniciando...")
             st_status = st.empty()
