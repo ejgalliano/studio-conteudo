@@ -356,15 +356,19 @@ st.markdown('<div class="section-title"><span class="step-badge">4</span>Lista d
 if not has_context:
     st.info("Preencha o contexto ou faça upload de pelo menos um documento para gerar os temas.")
 else:
-    q1, q2, q3, _ = st.columns([1, 1, 1, 3])
+    q1, q2, q3, q4, q5 = st.columns(5)
     with q1:
-        n_com  = st.number_input("🔴 Comercial",     min_value=0, max_value=200, value=35, step=5)
+        n_com  = st.number_input("🔴 Comercial",     min_value=0, max_value=200, value=20, step=5)
     with q2:
-        n_ins  = st.number_input("🔵 Institucional", min_value=0, max_value=200, value=35, step=5)
+        n_ins  = st.number_input("🔵 Institucional", min_value=0, max_value=200, value=20, step=5)
     with q3:
-        n_inf  = st.number_input("🟢 Informativo",   min_value=0, max_value=200, value=35, step=5)
+        n_inf  = st.number_input("🟢 Informativo",   min_value=0, max_value=200, value=20, step=5)
+    with q4:
+        n_eng  = st.number_input("🟡 Engajamento",   min_value=0, max_value=200, value=10, step=5)
+    with q5:
+        n_cas  = st.number_input("🟣 Cases",         min_value=0, max_value=200, value=10, step=5)
 
-    total_temas = n_com + n_ins + n_inf
+    total_temas = n_com + n_ins + n_inf + n_eng + n_cas
     n_lotes = -(-total_temas // SUB_BATCH_SIZE)  # ceil division
     t_min = max(1, n_lotes * 20 // 60)
     t_max = max(2, n_lotes * 35 // 60 + 1)
@@ -394,6 +398,8 @@ else:
                     n_comercial=n_com,
                     n_institucional=n_ins,
                     n_informativo=n_inf,
+                    n_engajamento=n_eng,
+                    n_cases=n_cas,
                     progress_callback=on_progress,
                 )
                 pb.progress(100, text="Concluído!")
@@ -412,11 +418,13 @@ if S.themes:
     st.caption(f"{len(S.themes)} temas gerados")
 
     # Filtros
-    fc1, fc2, fc3, fc4, search_col = st.columns([1, 1, 1, 1, 3])
+    fc1, fc2, fc3, fc4, fc5, fc6, search_col = st.columns([1, 1, 1, 1, 1, 1, 3])
     if fc1.button("Todos",      use_container_width=True, key="f_all"):  S["pilar_filter"] = "Todos"
     if fc2.button("🔴 Com.",    use_container_width=True, key="f_com"):  S["pilar_filter"] = "Comercial"
     if fc3.button("🔵 Inst.",   use_container_width=True, key="f_ins"):  S["pilar_filter"] = "Institucional"
     if fc4.button("🟢 Info.",   use_container_width=True, key="f_inf"):  S["pilar_filter"] = "Informativo"
+    if fc5.button("🟡 Eng.",    use_container_width=True, key="f_eng"):  S["pilar_filter"] = "Engajamento"
+    if fc6.button("🟣 Cases",   use_container_width=True, key="f_cas"):  S["pilar_filter"] = "Cases"
     if "pilar_filter" not in S: S["pilar_filter"] = "Todos"
 
     with search_col:

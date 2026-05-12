@@ -176,6 +176,8 @@ def _build_batches(
     n_comercial: int,
     n_institucional: int,
     n_informativo: int,
+    n_engajamento: int = 0,
+    n_cases: int = 0,
 ) -> list[tuple[str, str, int, int]]:
     """Divide as quantidades em sub-lotes de SUB_BATCH_SIZE."""
     batches: list[tuple[str, str, int, int]] = []
@@ -183,6 +185,8 @@ def _build_batches(
         ("Comercial",     "🔴", n_comercial,     1),
         ("Institucional", "🔵", n_institucional, 1 + n_comercial),
         ("Informativo",   "🟢", n_informativo,   1 + n_comercial + n_institucional),
+        ("Engajamento",   "🟡", n_engajamento,   1 + n_comercial + n_institucional + n_informativo),
+        ("Cases",         "🟣", n_cases,          1 + n_comercial + n_institucional + n_informativo + n_engajamento),
     ]
     for pilar, emoji, total, start in configs:
         if total <= 0:
@@ -234,6 +238,8 @@ def generate_themes(
     n_comercial: int,
     n_institucional: int,
     n_informativo: int,
+    n_engajamento: int = 0,
+    n_cases: int = 0,
     progress_callback=None,  # fn(pilar, batch_num, total_batches)
 ) -> str:
     context_block = f"""CLIENTE: {client_name}
@@ -253,7 +259,7 @@ PROPOSTA DE VALOR:
 PERSONAS:
 {personas[:1200]}"""
 
-    batches = _build_batches(n_comercial, n_institucional, n_informativo)
+    batches = _build_batches(n_comercial, n_institucional, n_informativo, n_engajamento, n_cases)
     total = len(batches)
     all_rows: list[str] = []
     seen: set[str] = set()
@@ -317,6 +323,12 @@ def generate_caption(
     elif "institucional" in pilar_lower:
         gatilho = "pertencimento, autoridade ou bastidores"
         cta_sugerido = "incentive curtir, seguir, compartilhar ou marcar alguém"
+    elif "engajamento" in pilar_lower:
+        gatilho = "curiosidade, identificação ou provocação (faça o seguidor querer responder)"
+        cta_sugerido = "faça uma pergunta direta, enquete ou desafio — ex: 'Comenta aqui qual é o seu caso'"
+    elif "cases" in pilar_lower:
+        gatilho = "prova social concreta com números, antes/depois ou depoimento real"
+        cta_sugerido = "convide a conhecer mais casos ou entrar em contato — ex: 'Quer um resultado parecido? Fala com a gente'"
     else:
         gatilho = "curiosidade, utilidade ou exclusividade da informação"
         cta_sugerido = "incentive salvar o post ou compartilhar com quem precisa"

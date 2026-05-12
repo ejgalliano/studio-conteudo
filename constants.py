@@ -15,11 +15,13 @@ FORMATS = [
     "💰 Tráfego Pago",
 ]
 
-PILARES = ["Comercial", "Institucional", "Informativo"]
+PILARES = ["Comercial", "Institucional", "Informativo", "Engajamento", "Cases"]
 PILAR_EMOJI = {
     "Comercial":     "🔴",
     "Institucional": "🔵",
     "Informativo":   "🟢",
+    "Engajamento":   "🟡",
+    "Cases":         "🟣",
 }
 
 # ── Tom de voz (7 principais) ─────────────────────────────────────────────────
