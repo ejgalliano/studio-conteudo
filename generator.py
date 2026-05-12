@@ -6,9 +6,13 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import google.generativeai as genai
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
+
+# Códigos HTTP que indicam limite temporário (vale tentar o próximo modelo)
+_RETRYABLE = ("429", "resource_exhausted", "resourceexhausted", "quota", "rateerror")
 
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
@@ -22,9 +26,8 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
             "Obtenha gratuitamente em https://ai.google.dev e adicione ao arquivo .env"
         )
 
-    # Nossa interface sempre envia uma lista com uma única mensagem de usuário
+    genai.configure(api_key=api_key)
     prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
-
     generation_config = genai.types.GenerationConfig(
         max_output_tokens=max_tokens,
         temperature=temperature,
@@ -33,24 +36,26 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
     last_error = None
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
         try:
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(
-                model_name,
-                generation_config=generation_config,
-            )
+            model = genai.GenerativeModel(model_name, generation_config=generation_config)
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
-            err = str(e).lower()
-            if "429" in str(e) or "quota" in err or "rate" in err or "exhausted" in err:
+            err_str = str(e).lower()
+            if any(code in err_str for code in _RETRYABLE):
                 last_error = e
+                time.sleep(2)   # pequena pausa antes do fallback
                 continue
-            raise
+            # Erro não relacionado a quota — propaga com mensagem clara
+            raise RuntimeError(
+                f"Erro na API Gemini ({model_name}):\n{e}\n\n"
+                "Verifique se a GOOGLE_API_KEY está correta e se a "
+                "Generative Language API está ativa no projeto."
+            ) from e
 
     raise RuntimeError(
-        "Limite de quota atingido em todos os modelos Gemini.\n\n"
-        "O plano gratuito do Google AI Studio permite 1.000.000 de tokens por dia. "
-        "O limite reseta à meia-noite (UTC). Tente novamente mais tarde."
+        "Limite de requisições atingido em todos os modelos Gemini.\n\n"
+        "O plano gratuito permite 15 requisições/minuto e 1.000.000 tokens/dia. "
+        "Aguarde 1 minuto e tente novamente."
     ) from last_error
 
 
