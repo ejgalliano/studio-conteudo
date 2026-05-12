@@ -127,26 +127,40 @@ Se alguma informação não tiver sido mencionada na transcrição, indique como
 TRANSCRIÇÃO:
 {transcricao[:7000]}"""
 
-    # ── Prompt 2: Objetivos de redes sociais ──
-    prompt_obj = f"""Com base na transcrição abaixo, extraia apenas os objetivos, metas e expectativas do cliente relacionados a marketing digital e redes sociais.
+    # ── Prompt 2: Objetivos e Metas (IBA Marketing & Vendas) ──
+    prompt_obj = f"""Aja como um Estrategista de Marketing e Vendas focado em Metodologia IBA. Sua missão é analisar a transcrição da reunião e extrair/estruturar a seção de "Objetivos e Metas" com precisão técnica.
 
-{_NO_MARKDOWN}
+DIRETRIZES DE EXTRAÇÃO:
+1. IDENTIFICAÇÃO DE INTENÇÃO: Diferencie o que é um "Desejo" (ex: "quero vender mais") de um "Objetivo Estratégico" (ex: "expandir a participação no mercado B2B").
+2. QUANTIFICAÇÃO: Sempre que o cliente mencionar números, prazos ou porcentagens, extraia-os com exatidão.
+3. CONTEXTO DE MARKETING/VENDAS: Relacione as metas aos pilares de: Aquisição (Tráfego/Leads), Conversão (Vendas/Eficiência) e Retenção (LTV/Fidelização).
+
+ESTRUTURA DA RESPOSTA:
+
+1. OBJETIVOS DE CURTO PRAZO (0-3 meses)
+Extraia metas imediatas mencionadas, como resolução de problemas operacionais ou campanhas específicas.
+
+2. OBJETIVOS DE MÉDIO/LONGO PRAZO (6-12 meses)
+Extraia visões de crescimento, faturamento esperado e expansão.
+
+3. METAS ESPECÍFICAS DE MARKETING E VENDAS
+Liste metas de tráfego, geração de leads, ticket médio ou redução de churn, se citadas.
+
+4. DESAFIOS E IMPEDIMENTOS (Gaps)
+O que o cliente disse que o impede de atingir essas metas hoje?
+
+5. CITAÇÕES CHAVE
+Transcreva aqui frases literais do cliente que resumam sua maior ambição ou maior medo.
+
+INSTRUÇÃO ADICIONAL:
+Se o objetivo citado for vago, sugira uma métrica (KPI) que poderia ser usada para medir esse objetivo, marcando como [Sugestão do Consultor].
+Se alguma informação não foi mencionada, indique como [Informação não abordada na reunião].
 
 TRANSCRIÇÃO:
-{transcricao[:4000]}
+{transcricao[:5000]}"""
 
-Retorne um texto corrido (sem marcadores especiais) com:
-- O que o cliente quer alcançar nas redes sociais
-- Metas de curto e médio prazo para presença digital
-- Restrições, preferências e o que não fazer
-- Tom de voz desejado para a comunicação
-
-Se não houver informação suficiente, deduza com base no perfil do negócio descrito.
-Seja específico e use apenas informações da transcrição. Escreva em português brasileiro."""
-
-    contexto  = _chat([{"role": "user", "content": prompt_iba}],  max_tokens=2500, temperature=0.2)
-    objetivos = _chat([{"role": "user", "content": prompt_obj}],  max_tokens=1000, temperature=0.3)
-    objetivos = clean_text(objetivos)
+    contexto  = _chat([{"role": "user", "content": prompt_iba}], max_tokens=2500, temperature=0.2)
+    objetivos = _chat([{"role": "user", "content": prompt_obj}], max_tokens=1500, temperature=0.2)
 
     return contexto.strip(), objetivos.strip()
 
