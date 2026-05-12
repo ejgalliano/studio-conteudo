@@ -2,7 +2,7 @@ GITHUB_REPO    = "ejgalliano/studio-conteudo"
 DELETED_FILE   = "_outputs/_deleted.txt"
 
 MODEL_PRIMARY   = "llama-3.3-70b-versatile"
-MODEL_FALLBACKS = ["llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+MODEL_FALLBACKS = ["llama-3.1-8b-instant"]
 
 # Máximo de temas por chamada à API (cabe em max_tokens=4000)
 SUB_BATCH_SIZE = 35

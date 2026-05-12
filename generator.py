@@ -34,7 +34,11 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
                 )
                 return resp.choices[0].message.content
             except Exception as e:
-                if "429" in str(e) or "rate_limit" in str(e).lower():
+                err_str = str(e).lower()
+                if "decommissioned" in err_str or "model_decommissioned" in err_str:
+                    last_error = e
+                    break  # modelo descontinuado — tenta o próximo sem esperar
+                if "429" in str(e) or "rate_limit" in err_str:
                     wait = 15 if attempt == 0 else 30
                     last_error = e
                     time.sleep(wait)
