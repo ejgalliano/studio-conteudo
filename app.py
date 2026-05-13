@@ -143,6 +143,9 @@ DEFAULTS = {
     "theme_status":      {},   # {num: "rascunho" | "aprovado"}
     "theme_drafts":      {},   # {num: caption_text}
 
+    # temas baixados (persistido no GitHub via 05-conteudos.md)
+    "downloaded_themes":    set(),  # {theme_num} já baixados em Word
+
     # caption panel
     "selected_theme":       None,
     "active_format":        FORMATS[0],
@@ -244,8 +247,14 @@ if mode == "📂 Carregar existente":
                 themes_raw      = read_disk("04-lista-temas.md")
                 S.themes        = parse_themes(themes_raw)
                 S.themes_raw    = themes_raw
-                S.selected_theme = None
+                S.selected_theme   = None
                 S.caption_versions = []
+                S.theme_status     = {}
+                # Carrega temas já baixados em Word
+                conteudos_raw = read_disk("05-conteudos.md")
+                S.downloaded_themes = set(
+                    n.strip() for n in conteudos_raw.splitlines() if n.strip()
+                )
                 st.rerun()
 
         # Delete button
@@ -442,9 +451,10 @@ if S.themes:
         filtered = [t for t in filtered if S["pilar_filter"] in t["pilar"]]
 
     def theme_status_icon(num):
+        if num in S.downloaded_themes:  return "📄"
         s = S.theme_status.get(num, "")
-        if s == "aprovado":  return "✅"
-        if s == "rascunho":  return "📝"
+        if s == "aprovado":             return "✅"
+        if s == "rascunho":             return "📝"
         return ""
 
     df = pd.DataFrame([{
@@ -726,6 +736,14 @@ if S.document:
     )
     with de:
         word_bytes = export_to_word(S.document, S.client_name)
+
+        def _on_download():
+            # Marca temas do documento como baixados e persiste no GitHub
+            nums = {item["theme_num"] for item in S.document}
+            S.downloaded_themes = S.downloaded_themes | nums
+            content = "\n".join(sorted(S.downloaded_themes))
+            save_client(S.client_name, {"05-conteudos.md": content})
+
         st.download_button(
             "⬇️ Exportar Word",
             data=word_bytes,
@@ -733,6 +751,7 @@ if S.document:
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             type="primary",
             use_container_width=True,
+            on_click=_on_download,
         )
 
     for i, item in enumerate(S.document):
