@@ -11,11 +11,30 @@ from groq import Groq
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
+DAILY_LIMIT = 100_000  # tokens/dia no plano gratuito Groq
+
+# Contador de tokens da sessão atual (acumula enquanto o servidor estiver rodando)
+_session_tokens: int = 0
+_session_requests: int = 0
+
+
+def get_token_usage() -> dict:
+    """Retorna uso de tokens da sessão atual."""
+    return {
+        "used":      _session_tokens,
+        "limit":     DAILY_LIMIT,
+        "remaining": max(0, DAILY_LIMIT - _session_tokens),
+        "pct":       min(100, int(_session_tokens / DAILY_LIMIT * 100)),
+        "requests":  _session_requests,
+    }
+
 
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
     """Chama Groq; em rate-limit usa fallbacks automaticamente."""
+    global _session_tokens, _session_requests
+
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY não encontrada. Verifique o arquivo .env")
@@ -32,12 +51,16 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
+                # Acumula uso de tokens
+                if hasattr(resp, "usage") and resp.usage:
+                    _session_tokens   += resp.usage.total_tokens
+                    _session_requests += 1
                 return resp.choices[0].message.content
             except Exception as e:
                 err_str = str(e).lower()
                 if "decommissioned" in err_str or "model_decommissioned" in err_str:
                     last_error = e
-                    break  # modelo descontinuado — tenta o próximo sem esperar
+                    break
                 if "429" in str(e) or "rate_limit" in err_str:
                     wait = 15 if attempt == 0 else 30
                     last_error = e

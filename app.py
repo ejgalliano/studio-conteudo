@@ -14,6 +14,7 @@ from generator import (
     generate_caption,
     refine_caption,
     clean_text,
+    get_token_usage,
 )
 from github_api import (
     get_deleted_clients,
@@ -178,13 +179,20 @@ S = st.session_state  # alias curto
 # HEADER
 # ══════════════════════════════════════════════════════════════════════════════
 
-col_title, col_model = st.columns([5, 2])
+col_title, col_model = st.columns([5, 3])
 col_title.markdown("## 🎯 Studio de Conteúdo")
 with col_model:
     key_ok = bool(os.getenv("GROQ_API_KEY"))
+    usage  = get_token_usage()
+    pct    = usage["pct"]
+    cor    = "#27ae60" if pct < 60 else "#f39c12" if pct < 85 else "#e74c3c"
+    emoji  = "🟢" if pct < 60 else "🟡" if pct < 85 else "🔴"
     st.markdown(
-        f"<div style='text-align:right; padding-top:14px; font-size:0.8rem; color:{'#27ae60' if key_ok else '#e74c3c'}'>"
-        f"{'✅' if key_ok else '❌'} {MODEL_PRIMARY}</div>",
+        f"<div style='text-align:right; padding-top:10px; font-size:0.78rem; line-height:1.6'>"
+        f"{'✅' if key_ok else '❌'} <b>{MODEL_PRIMARY}</b><br>"
+        f"<span style='color:{cor}'>{emoji} {usage['used']:,} / {usage['limit']:,} tokens ({pct}%)</span>"
+        f" &nbsp;·&nbsp; {usage['requests']} requisições nesta sessão"
+        f"</div>",
         unsafe_allow_html=True,
     )
 st.divider()
