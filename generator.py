@@ -344,6 +344,8 @@ def generate_caption(
     guia: str,
     tom: str = "Profissional",
     estilo: str = "Lista de Dicas",
+    instrucoes: str = "",
+    max_chars: int = 750,
 ) -> str:
     fmt_clean = formato.split(" ", 1)[1] if " " in formato else formato
 
@@ -516,6 +518,7 @@ Formato: {fmt_clean}
 Persona-alvo: {theme['persona']}
 Gatilho mental a usar: {gatilho}
 CTA: {cta_sugerido}
+{f"INSTRUCOES ESPECIFICAS DO REDATOR: {instrucoes.strip()}" if instrucoes and instrucoes.strip() else ""}
 
 ════════════════════════════════
 REGRAS ABSOLUTAS
@@ -528,7 +531,7 @@ PROIBIDO estrutura generica: nao comece com "Voce sabia que..." nem com "Ola!" n
 
 OBRIGATORIO:
 - Hook: frase COMPLETA e independente — para o scroll em menos de 3 segundos — maximo 10 palavras
-- Legenda: COMECA DO ZERO, nao e continuacao do hook — texto completo — maximo 750 caracteres
+- Legenda: COMECA DO ZERO, nao e continuacao do hook — texto completo — MAXIMO {max_chars} CARACTERES (conte e respeite este limite)
 - Paragrafos: maximo 2 linhas cada — use linha em branco entre paragrafos
 - Emojis: use com criterio, apenas onde reforcem a mensagem
 - Soar como humano, nao como IA
@@ -545,10 +548,10 @@ HOOK
 [frase COMPLETA — maximo 10 palavras — impacto imediato — nao e inicio de uma frase que continua na legenda]
 
 LEGENDA
-[comeca com frase NOVA — texto completo seguindo o estilo {estilo} — CTA no final — maximo 750 caracteres]
+[comeca com frase NOVA — texto completo seguindo o estilo {estilo} — CTA no final — MAXIMO {max_chars} CARACTERES]
 
 HASHTAGS
-[3 a 5 hashtags especificas do nicho, nao genericas como #marketing ou #negocios]
+[exatamente 5 hashtags especificas do nicho — nao use genericas como #marketing ou #negocios]
 
 INSTRUCOES PARA DESIGN
 [orientacoes visuais concretas: o que mostrar na imagem, texto na arte, cor de destaque]

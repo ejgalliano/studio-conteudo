@@ -148,6 +148,8 @@ DEFAULTS = {
     "active_format":        FORMATS[0],
     "active_tom":    list(TONS.keys())[0],
     "active_estilo": list(ESTILOS.keys())[0],
+    "instrucoes_legenda":   "",   # instruções livres antes de gerar
+    "max_chars_legenda":    750,  # limite de caracteres da legenda
     "caption_versions":     [],   # list of str (last 3)
     "caption_ver_idx":      0,    # index being shown
     "caption_key":          0,    # incrementa para forçar re-render
@@ -552,6 +554,27 @@ if S.selected_theme:
             help=ESTILOS.get(S.active_estilo, ""),
         )
 
+    # ── Instruções e limite de caracteres ──
+    st.markdown("**Instruções adicionais e tamanho:**")
+    ic, cc = st.columns([4, 1])
+    with ic:
+        S.instrucoes_legenda = st.text_area(
+            "instrucoes_legenda",
+            value=S.instrucoes_legenda,
+            placeholder='Ex: "Mencione o prazo de entrega de 24h", "Use tom mais técnico", "Foque na dor de parada de produção"...',
+            height=80,
+            label_visibility="collapsed",
+        )
+    with cc:
+        S.max_chars_legenda = st.number_input(
+            "Máx. caracteres",
+            min_value=100,
+            max_value=2200,
+            value=S.max_chars_legenda,
+            step=50,
+            help="Limite de caracteres da legenda (sem contar hashtags)",
+        )
+
     # ── Generate ──
     if st.button("⚡ Gerar Legenda", type="primary", use_container_width=True):
         with st.spinner("Gerando legenda..."):
@@ -568,6 +591,8 @@ if S.selected_theme:
                     guia=guia,
                     tom=S.active_tom,
                     estilo=S.active_estilo,
+                    instrucoes=S.instrucoes_legenda,
+                    max_chars=S.max_chars_legenda,
                 )
                 # Adiciona ao histórico (máximo 3 versões)
                 S.caption_versions = ([cap] + S.caption_versions)[:3]
@@ -669,6 +694,8 @@ if S.selected_theme:
                             guia=guia,
                             tom=S.active_tom,
                             estilo=S.active_estilo,
+                            instrucoes=S.instrucoes_legenda,
+                            max_chars=S.max_chars_legenda,
                         )
                         S.caption_versions = ([cap2] + S.caption_versions)[:3]
                         S.caption_ver_idx  = 0
