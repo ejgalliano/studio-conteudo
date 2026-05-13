@@ -65,23 +65,49 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
                     timeout=120,
                 )
                 if resp.status_code == 429:
+                    try:
+                        err_data = resp.json()
+                        msg = err_data.get("error", {}).get("message", resp.text)
+                        # Detecta free tier bloqueado (limit: 0)
+                        violations = err_data.get("error", {}).get("details", [{}])
+                        limits_zero = any(
+                            v.get("quotaMetric","") and "limit" in str(v)
+                            for v in violations
+                            if isinstance(v, dict)
+                        )
+                        if "limit: 0" in msg or limits_zero:
+                            raise RuntimeError(
+                                "Cota gratuita bloqueada nesta chave de API.\n\n"
+                                "O projeto Google associado a esta chave tem billing ativado, "
+                                "o que remove o acesso ao plano gratuito.\n\n"
+                                "Solução: acesse aistudio.google.com → Get API Key → "
+                                "Create API key in new project (sem ativar billing) e atualize a chave nos Secrets do Streamlit."
+                            )
+                    except RuntimeError:
+                        raise
+                    except Exception:
+                        pass
                     wait = 15 if attempt == 0 else 60
-                    last_error = Exception(resp.text)
+                    last_error = Exception("Rate limit — aguardando...")
                     time.sleep(wait)
                     continue
                 if not resp.ok:
-                    last_error = Exception(f"HTTP {resp.status_code} [{model_name}]: {resp.text[:500]}")
+                    last_error = Exception(f"Erro {resp.status_code} no modelo {model_name}")
                     break  # tenta próximo modelo
                 data = resp.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 _session_tokens   += data.get("usageMetadata", {}).get("totalTokenCount", 0)
                 _session_requests += 1
                 return text
+            except RuntimeError:
+                raise
             except Exception as e:
                 last_error = e
                 raise
 
-    raise RuntimeError(str(last_error)) from last_error
+    raise RuntimeError(
+        f"Não foi possível gerar o conteúdo.\n\n{last_error}"
+    ) from last_error
 
 
 # ── Text cleaner ──────────────────────────────────────────────────────────────
