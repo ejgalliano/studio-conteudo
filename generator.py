@@ -550,7 +550,7 @@ INSTRUCOES PARA DESIGN
 {"SEQUENCIA DE STORIES" + chr(10) + "[Story 1: gancho com pergunta ou afirmacao forte | Stories 2-4: desenvolvimento um por um | Story 5: CTA com recurso interativo (enquete, link, caixa de perguntas)]" if "Stories" in fmt_clean else ""}
 {"ANUNCIO PAGO" + chr(10) + "[Texto primario: max 125 car. | Headline: max 40 car. | Descricao: max 30 car. | Botao CTA | Publico sugerido com interesses especificos]" if "Trafego" in fmt_clean or "Pago" in fmt_clean else ""}"""
 
-    raw = _chat([{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.75)
+    raw = _chat([{"role": "user", "content": prompt}], max_tokens=1200, temperature=0.75)
     return clean_text(raw)
 
 
