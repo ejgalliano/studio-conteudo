@@ -69,23 +69,19 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
                     last_error = Exception(resp.text)
                     time.sleep(wait)
                     continue
-                resp.raise_for_status()
+                if not resp.ok:
+                    last_error = Exception(f"HTTP {resp.status_code} [{model_name}]: {resp.text[:500]}")
+                    break  # tenta próximo modelo
                 data = resp.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 _session_tokens   += data.get("usageMetadata", {}).get("totalTokenCount", 0)
                 _session_requests += 1
                 return text
-            except requests.HTTPError as e:
-                last_error = e
-                break  # erro de modelo — tenta próximo
             except Exception as e:
+                last_error = e
                 raise
 
-    raise RuntimeError(
-        "Não foi possível conectar ao Gemini.\n\n"
-        "Verifique se a GOOGLE_API_KEY está correta nos secrets do Streamlit. "
-        "Se o limite diário foi atingido (1.500 req/dia), tente novamente amanhã."
-    ) from last_error
+    raise RuntimeError(str(last_error)) from last_error
 
 
 # ── Text cleaner ──────────────────────────────────────────────────────────────
