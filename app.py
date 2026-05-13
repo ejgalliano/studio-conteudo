@@ -177,7 +177,7 @@ S = st.session_state  # alias curto
 col_title, col_model = st.columns([5, 3])
 col_title.markdown("## 🎯 Studio de Conteúdo")
 with col_model:
-    key_ok = bool(os.getenv("OPENROUTER_API_KEY"))
+    key_ok = bool(os.getenv("GOOGLE_API_KEY"))
     usage  = get_token_usage()
     pct    = usage["pct"]
     cor    = "#27ae60" if pct < 60 else "#f39c12" if pct < 85 else "#e74c3c"
@@ -379,8 +379,8 @@ else:
 
     if st.button("⚡ Gerar Lista de Temas", type="primary", use_container_width=True,
                  disabled=total_temas == 0):
-        if not os.getenv("OPENROUTER_API_KEY"):
-            st.error("OPENROUTER_API_KEY não configurada. Obtenha gratuitamente em https://openrouter.ai")
+        if not os.getenv("GOOGLE_API_KEY"):
+            st.error("GOOGLE_API_KEY não configurada. Obtenha gratuitamente em https://aistudio.google.com")
         else:
             pb = st.progress(0, text="Iniciando...")
             st_status = st.empty()

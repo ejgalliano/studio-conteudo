@@ -1,5 +1,5 @@
 """
-Todas as chamadas à API OpenRouter (modelos free, sem limite diário).
+Todas as chamadas à API Google Gemini via REST v1 direto.
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
 from __future__ import annotations
@@ -11,9 +11,9 @@ import requests
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
 
-DAILY_LIMIT = 500  # estimativa conservadora de req/dia (OpenRouter free não tem limite fixo)
+DAILY_LIMIT = 1_500  # requisições/dia no plano gratuito Gemini
 
 # Contador de tokens da sessão atual (acumula enquanto o servidor estiver rodando)
 _session_tokens: int = 0
@@ -35,54 +35,51 @@ def get_token_usage() -> dict:
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama OpenRouter com retry automático entre modelos free."""
+    """Chama Google Gemini via REST v1 com retry automático."""
     global _session_tokens, _session_requests
 
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError("OPENROUTER_API_KEY não encontrada. Verifique os secrets do Streamlit.")
+        raise ValueError("GOOGLE_API_KEY não encontrada. Verifique os secrets do Streamlit.")
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://studio-conteudo.streamlit.app",
-        "X-Title": "Studio de Conteudo WSI",
+    prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+        },
     }
 
     last_error = None
 
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-        }
+        url = GEMINI_URL.format(model=model_name)
         for attempt in range(3):
             try:
                 resp = requests.post(
-                    OPENROUTER_URL,
-                    headers=headers,
+                    url,
+                    params={"key": api_key},
                     json=payload,
                     timeout=120,
                 )
                 if resp.status_code == 429:
-                    # Pega o tempo de espera sugerido pela API
                     try:
-                        retry_after = int(resp.json().get("metadata", {}).get("retry_after_seconds", 20))
+                        retry_after = int(resp.json().get("error", {}).get("details", [{}])[-1].get("retryDelay", "20s").replace("s",""))
                     except Exception:
                         retry_after = 20
                     wait = retry_after + 2
-                    last_error = Exception(f"Rate limit no modelo {model_name} (aguardando {wait}s)")
+                    last_error = Exception(f"Rate limit (aguardando {wait}s)")
                     time.sleep(wait)
                     continue
                 if not resp.ok:
                     last_error = Exception(f"Erro {resp.status_code} [{model_name}]: {resp.text[:200]}")
                     break  # tenta próximo modelo
                 data = resp.json()
-                text = data["choices"][0]["message"]["content"]
-                usage = data.get("usage", {})
-                _session_tokens   += usage.get("total_tokens", 0)
+                # gemini-2.5 pode retornar conteúdo vazio se MAX_TOKENS muito baixo
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(p.get("text", "") for p in parts)
+                _session_tokens   += data.get("usageMetadata", {}).get("totalTokenCount", 0)
                 _session_requests += 1
                 return text
             except Exception as e:
@@ -90,7 +87,7 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
                 raise
 
     raise RuntimeError(
-        f"Servidor ocupado. Tente novamente em alguns segundos.\n\nDetalhe: {last_error}"
+        f"Não foi possível gerar o conteúdo.\n\nDetalhe: {last_error}"
     ) from last_error
 
 
