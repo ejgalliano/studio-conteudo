@@ -512,21 +512,25 @@ PROIBIDO usar estas palavras ou expressoes:
 PROIBIDO estrutura generica: nao comece com "Voce sabia que..." nem com "Ola!" nem com o nome da empresa.
 
 OBRIGATORIO:
-- Hook: primeira linha para o scroll em menos de 3 segundos — maximo 10 palavras
-- Legenda: maximo 750 caracteres
+- Hook: frase COMPLETA e independente — para o scroll em menos de 3 segundos — maximo 10 palavras
+- Legenda: COMECA DO ZERO, nao e continuacao do hook — texto completo — maximo 750 caracteres
 - Paragrafos: maximo 2 linhas cada — use linha em branco entre paragrafos
 - Emojis: use com criterio, apenas onde reforcem a mensagem
 - Soar como humano, nao como IA
+
+REGRA CRITICA — HOOK E LEGENDA SAO INDEPENDENTES:
+O HOOK deve ser uma frase 100% completa por si so. Exemplo certo: "80% das fabricas perdem producao por erro de codificacao." Exemplo ERRADO: "80% das paradas de producao" (frase incompleta que continua na legenda).
+A LEGENDA comeca com uma frase nova, diferente do hook, nao uma continuacao dele.
 
 ════════════════════════════════
 ENTREGUE NESTA ORDEM:
 ════════════════════════════════
 
 HOOK
-[uma unica linha — maximo 10 palavras — sem introducao — impacto imediato]
+[frase COMPLETA — maximo 10 palavras — impacto imediato — nao e inicio de uma frase que continua na legenda]
 
 LEGENDA
-[texto completo seguindo o estilo {estilo} — CTA no final — maximo 750 caracteres]
+[comeca com frase NOVA — texto completo seguindo o estilo {estilo} — CTA no final — maximo 750 caracteres]
 
 HASHTAGS
 [3 a 5 hashtags especificas do nicho, nao genericas como #marketing ou #negocios]
