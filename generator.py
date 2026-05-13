@@ -7,7 +7,8 @@ from __future__ import annotations
 import os
 import re
 import time
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
@@ -40,7 +41,7 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
     if not api_key:
         raise ValueError("GOOGLE_API_KEY não encontrada. Verifique os secrets do Streamlit.")
 
-    genai.configure(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
     # Extrai o texto do último (ou único) turno do usuário
     prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
@@ -50,14 +51,14 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
         for attempt in range(2):
             try:
-                model = genai.GenerativeModel(
-                    model_name=model_name,
-                    generation_config=genai.types.GenerationConfig(
+                resp = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
                         max_output_tokens=max_tokens,
                         temperature=temperature,
                     ),
                 )
-                resp = model.generate_content(prompt)
                 # Acumula tokens e requisições
                 if hasattr(resp, "usage_metadata") and resp.usage_metadata:
                     _session_tokens += resp.usage_metadata.total_token_count or 0
@@ -73,7 +74,6 @@ def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> s
                 raise
         # Esgotou tentativas neste modelo, tenta o próximo
         last_error = Exception(f"Falha no modelo {model_name}") if last_error is None else last_error
-        continue
 
     raise RuntimeError(
         "Limite diário de requisições atingido.\n\n"
