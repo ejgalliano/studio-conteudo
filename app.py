@@ -99,11 +99,6 @@ def load_guia() -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def copy_section(text: str):
-    """Campo somente-leitura para seleção e cópia fácil (Ctrl+A → Ctrl+C)."""
-    st.caption("📋 Copiar legenda — clique no campo abaixo e use Ctrl+A → Ctrl+C:")
-    st.text_area("copy", value=text, height=180,
-                 label_visibility="collapsed", disabled=True, key=f"copy_{hash(text) % 99999}")
 
 
 # ── Cached GitHub ─────────────────────────────────────────────────────────────
@@ -610,9 +605,6 @@ if S.selected_theme:
             label_visibility="collapsed",
             key=f"cap_v{S.caption_key}",
         )
-
-        # Copy section
-        copy_section(edited)
 
         # ── AI refinement ──
         st.markdown("**Ajustar com IA:**")
