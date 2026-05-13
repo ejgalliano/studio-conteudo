@@ -65,25 +65,6 @@ def export_to_word(items: list, client_name: str) -> bytes:
 
     doc.add_page_break()
 
-    # Summary table
-    doc.add_heading("Sumário de Conteúdos", level=1)
-    table = doc.add_table(rows=1, cols=4)
-    table.style = "Table Grid"
-
-    headers = table.rows[0].cells
-    for i, h in enumerate(["#", "Tema", "Pilar", "Formato"]):
-        headers[i].text = h
-        headers[i].paragraphs[0].runs[0].font.bold = True
-
-    for item in items:
-        row = table.add_row().cells
-        row[0].text = str(item["num"])
-        row[1].text = item["tema"]
-        row[2].text = item["pilar"]
-        row[3].text = item["formato"]
-
-    doc.add_page_break()
-
     # Content pages
     for item in items:
         heading = doc.add_heading(f"#{item['num']} — {item['tema']}", level=1)
