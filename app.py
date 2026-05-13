@@ -189,9 +189,9 @@ with col_model:
     emoji  = "🟢" if pct < 60 else "🟡" if pct < 85 else "🔴"
     st.markdown(
         f"<div style='text-align:right; padding-top:10px; font-size:0.78rem; line-height:1.6'>"
-        f"{'✅' if key_ok else '❌'} <b>{MODEL_PRIMARY}</b><br>"
-        f"<span style='color:{cor}'>{emoji} {usage['requests']} / {usage['limit']:,} req hoje ({pct}%)</span>"
-        f" &nbsp;·&nbsp; {usage['used']:,} tokens nesta sessão"
+        f"{'✅' if key_ok else '❌'} <b>{MODEL_PRIMARY}</b> &nbsp;|&nbsp; limite: 1.500 req/dia<br>"
+        f"<span style='color:{cor}'>{emoji} {usage['requests']} requisições nesta sessão"
+        f" &nbsp;·&nbsp; {usage['used']:,} tokens</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
