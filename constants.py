@@ -1,8 +1,11 @@
 GITHUB_REPO    = "ejgalliano/studio-conteudo"
 DELETED_FILE   = "_outputs/_deleted.txt"
 
-MODEL_PRIMARY   = "gemini-2.0-flash-lite"
-MODEL_FALLBACKS = ["gemini-2.0-flash"]
+MODEL_PRIMARY   = "meta-llama/llama-3.3-70b-instruct:free"
+MODEL_FALLBACKS = [
+    "qwen/qwen3-next-80b-a3b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+]
 
 # Máximo de temas por chamada à API (cabe em max_tokens=4000)
 SUB_BATCH_SIZE = 35

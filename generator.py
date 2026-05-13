@@ -1,5 +1,5 @@
 """
-Todas as chamadas à API Google Gemini via REST v1 (sem SDK).
+Todas as chamadas à API OpenRouter (modelos free, sem limite diário).
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
 from __future__ import annotations
@@ -11,9 +11,9 @@ import requests
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-DAILY_LIMIT = 1_500  # requisições/dia no plano gratuito Gemini
+DAILY_LIMIT = 500  # estimativa conservadora de req/dia (OpenRouter free não tem limite fixo)
 
 # Contador de tokens da sessão atual (acumula enquanto o servidor estiver rodando)
 _session_tokens: int = 0
@@ -35,78 +35,62 @@ def get_token_usage() -> dict:
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Google Gemini via REST v1 direto — sem SDK, sem v1beta."""
+    """Chama OpenRouter com retry automático entre modelos free."""
     global _session_tokens, _session_requests
 
-    api_key = os.getenv("GOOGLE_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise ValueError("GOOGLE_API_KEY não encontrada. Verifique os secrets do Streamlit.")
+        raise ValueError("OPENROUTER_API_KEY não encontrada. Verifique os secrets do Streamlit.")
 
-    prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
-
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": max_tokens,
-            "temperature": temperature,
-        },
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://studio-conteudo.streamlit.app",
+        "X-Title": "Studio de Conteudo WSI",
     }
 
     last_error = None
 
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
-        url = GEMINI_URL.format(model=model_name)
-        for attempt in range(2):
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        for attempt in range(3):
             try:
                 resp = requests.post(
-                    url,
-                    params={"key": api_key},
+                    OPENROUTER_URL,
+                    headers=headers,
                     json=payload,
                     timeout=120,
                 )
                 if resp.status_code == 429:
+                    # Pega o tempo de espera sugerido pela API
                     try:
-                        err_data = resp.json()
-                        msg = err_data.get("error", {}).get("message", resp.text)
-                        # Detecta free tier bloqueado (limit: 0)
-                        violations = err_data.get("error", {}).get("details", [{}])
-                        limits_zero = any(
-                            v.get("quotaMetric","") and "limit" in str(v)
-                            for v in violations
-                            if isinstance(v, dict)
-                        )
-                        if "limit: 0" in msg or limits_zero:
-                            raise RuntimeError(
-                                "Cota gratuita bloqueada nesta chave de API.\n\n"
-                                "O projeto Google associado a esta chave tem billing ativado, "
-                                "o que remove o acesso ao plano gratuito.\n\n"
-                                "Solução: acesse aistudio.google.com → Get API Key → "
-                                "Create API key in new project (sem ativar billing) e atualize a chave nos Secrets do Streamlit."
-                            )
-                    except RuntimeError:
-                        raise
+                        retry_after = int(resp.json().get("metadata", {}).get("retry_after_seconds", 20))
                     except Exception:
-                        pass
-                    wait = 15 if attempt == 0 else 60
-                    last_error = Exception("Rate limit — aguardando...")
+                        retry_after = 20
+                    wait = retry_after + 2
+                    last_error = Exception(f"Rate limit no modelo {model_name} (aguardando {wait}s)")
                     time.sleep(wait)
                     continue
                 if not resp.ok:
-                    last_error = Exception(f"Erro {resp.status_code} no modelo {model_name}")
+                    last_error = Exception(f"Erro {resp.status_code} [{model_name}]: {resp.text[:200]}")
                     break  # tenta próximo modelo
                 data = resp.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                _session_tokens   += data.get("usageMetadata", {}).get("totalTokenCount", 0)
+                text = data["choices"][0]["message"]["content"]
+                usage = data.get("usage", {})
+                _session_tokens   += usage.get("total_tokens", 0)
                 _session_requests += 1
                 return text
-            except RuntimeError:
-                raise
             except Exception as e:
                 last_error = e
                 raise
 
     raise RuntimeError(
-        f"Não foi possível gerar o conteúdo.\n\n{last_error}"
+        f"Servidor ocupado. Tente novamente em alguns segundos.\n\nDetalhe: {last_error}"
     ) from last_error
 
 
