@@ -316,107 +316,205 @@ def generate_caption(
     if contexto: ctx += f"CONTEXTO DO CLIENTE:\n{contexto[:1500]}\n\n"
     if objetivos: ctx += f"OBJETIVOS:\n{objetivos[:1000]}\n\n"
 
-    tom_desc    = TONS.get(tom, "")
-    estilo_desc = ESTILOS.get(estilo, "")
+    # ── Regras concretas de escrita por tom ──────────────────────────────────────
+    REGRAS_TOM = {
+        "Profissional": (
+            "Use linguagem tecnica mas acessivel. Cite dados, resultados ou fatos concretos sempre que possivel. "
+            "Frases curtas e diretas. Prefira 'voce' ao 'a gente'. Sem informalidade excessiva. "
+            "O leitor deve sentir que esta lendo algo de uma fonte confiavel e experiente."
+        ),
+        "Conversacional": (
+            "Escreva exatamente como falaria com um amigo em uma conversa. Use 'a gente', contrações naturais, "
+            "expressoes do dia a dia. Sem palavras rebuscadas. Pode usar reticencias para criar pausa. "
+            "Cada frase deve soar como algo que uma pessoa real diria em voz alta."
+        ),
+        "Inspiracional": (
+            "Comece com uma verdade que provoca reflexao ou um insight inesperado. Use metaforas e imagens mentais. "
+            "Frases com ritmo — alterne frases curtas com frases longas. "
+            "O leitor deve terminar o post querendo agir ou mudar algo na vida dele."
+        ),
+        "Educativo": (
+            "Cada paragrafo deve ensinar algo acionavel. Use construcoes como 'O motivo e...', 'Isso acontece porque...', "
+            "'A diferenca entre X e Y e...'. Explique o 'por que' antes do 'como'. "
+            "Termine com uma aplicacao pratica que o leitor pode usar hoje."
+        ),
+        "Direto": (
+            "Sem introducao, sem contexto, sem aquecimento. A primeira palavra ja e impacto ou oferta. "
+            "Use verbos no imperativo: 'Faz', 'Para', 'Descobre', 'Entra'. "
+            "Cada linha deve empurrar o leitor para a proxima acao. Sem enrolacao."
+        ),
+        "Emocional": (
+            "Crie uma cena concreta — o leitor deve se ver dentro da historia. Use detalhes sensoriais: "
+            "o que a pessoa viu, sentiu, pensou naquele momento. Nao diga a emocao — mostre ela. "
+            "A virada emocional deve vir perto do final, antes do CTA."
+        ),
+        "Humoristico": (
+            "Use o formato: setup (situacao normal) + subversao (virada inesperada). "
+            "O humor vem da identificacao — o leitor ri porque ja passou por isso. "
+            "Nunca force a piada. Se nao vier naturalmente, prefira ironia leve. "
+            "Tom leve do inicio ao fim, mas com mensagem real por tras."
+        ),
+    }
 
-    # Gatilho mental e CTA por pilar
+    # ── Formula estrutural por estilo ─────────────────────────────────────────
+    FORMULA_ESTILO = {
+        "Storytelling": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Linha 1-2: Contexto (quando, onde, quem — situa o leitor)\n"
+            "Linha 3-4: Conflito (o problema ou desafio real)\n"
+            "Linha 5-8: Desenvolvimento (o que aconteceu, o que tentou)\n"
+            "Ultima linha: Virada ou licao — a transformacao\n"
+            "CTA integrado na virada ou logo apos."
+        ),
+        "Lista de Dicas": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Linha 1: Promessa com numero — ex: '5 erros que estao te custando clientes:'\n"
+            "Itens numerados — maximo 2 linhas por item\n"
+            "Cada item: problema ou dica + consequencia ou beneficio\n"
+            "Ultimo item: o mais surpreendente ou contraintuitivo\n"
+            "CTA apos a lista."
+        ),
+        "Pergunta + Resposta": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Linha 1: Pergunta que a persona ja se fez (nao responda ainda)\n"
+            "Linha 2: Subverta a resposta obvia — 'A maioria diria X. Mas a resposta e outra.'\n"
+            "Desenvolvimento: a resposta real com argumento\n"
+            "Ultima linha: pergunta de volta para o leitor ou CTA."
+        ),
+        "Antes e Depois": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Abertura: contraste direto — 'Antes: [situacao ruim]. Depois: [resultado real].'\n"
+            "Desenvolvimento: o que mudou, como mudou, por que mudou\n"
+            "Seja especifico: use numeros, prazos, situacoes reais\n"
+            "CTA: convide o leitor a ter o mesmo resultado."
+        ),
+        "Passo a Passo": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Linha 1: Resultado prometido ao seguir os passos\n"
+            "Passos numerados (Passo 1, Passo 2...): cada um com acao clara e objetiva\n"
+            "Maximo 5 passos — se precisar de mais, agrupe\n"
+            "Ultimo passo: o mais contraintuitivo ou surpreendente\n"
+            "CTA: proximo passo natural apos ler."
+        ),
+        "Dado + Insight": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Linha 1: Estatistica, numero ou fato impactante (real ou verossimil)\n"
+            "Linha 2: O que esse numero REALMENTE significa para a persona\n"
+            "Desenvolvimento: implicacao pratica — o que fazer com essa informacao\n"
+            "Ultima linha: insight ou provocacao que fica na cabeca\n"
+            "CTA conectado ao insight."
+        ),
+        "CTA Direto": (
+            "ESTRUTURA OBRIGATORIA:\n"
+            "Linha 1: Verbo imperativo + beneficio claro — sem introducao\n"
+            "Linha 2-3: Prova ou razao rapida (por que acreditar)\n"
+            "Linha 4: CTA especifico e facil de executar\n"
+            "Repita o CTA de forma diferente no final\n"
+            "Sem paragrafo longo. Tudo curto e direto."
+        ),
+    }
+
+    regras_tom   = REGRAS_TOM.get(tom, TONS.get(tom, ""))
+    formula_est  = FORMULA_ESTILO.get(estilo, ESTILOS.get(estilo, ""))
+
+    # ── Gatilho e CTA por pilar ───────────────────────────────────────────────
     pilar_lower = theme['pilar'].lower()
     if "comercial" in pilar_lower:
-        gatilho = "prova social, escassez ou urgência"
-        cta_sugerido = "direcione para WhatsApp, link na bio ou 'Comente X para saber mais'"
+        gatilho      = "prova social, escassez ou urgencia — faca o leitor sentir que perder essa oportunidade e um erro"
+        cta_sugerido = "direcione para WhatsApp, link na bio ou 'Comenta X que te mando o link'"
     elif "institucional" in pilar_lower:
-        gatilho = "pertencimento, autoridade ou bastidores"
-        cta_sugerido = "incentive curtir, seguir, compartilhar ou marcar alguém"
+        gatilho      = "pertencimento e autoridade — mostre os bastidores, os valores reais, as pessoas por tras da marca"
+        cta_sugerido = "incentive curtir, seguir, compartilhar ou marcar alguem que precisa ver isso"
     elif "engajamento" in pilar_lower:
-        gatilho = "curiosidade, identificação ou provocação (faça o seguidor querer responder)"
-        cta_sugerido = "faça uma pergunta direta, enquete ou desafio — ex: 'Comenta aqui qual é o seu caso'"
+        gatilho      = "identificacao e provocacao — faca o leitor pensar 'isso e exatamente comigo' e querer responder"
+        cta_sugerido = "faca uma pergunta direta e especifica no final — ex: 'E voce, ja passou por isso? Comenta aqui'"
     elif "cases" in pilar_lower:
-        gatilho = "prova social concreta com números, antes/depois ou depoimento real"
-        cta_sugerido = "convide a conhecer mais casos ou entrar em contato — ex: 'Quer um resultado parecido? Fala com a gente'"
+        gatilho      = "prova social concreta — use numeros reais, situacao antes/depois, detalhe especifico que da credibilidade"
+        cta_sugerido = "convide a conhecer mais ou entrar em contato — ex: 'Quer um resultado parecido? Chama a gente no link da bio'"
     else:
-        gatilho = "curiosidade, utilidade ou exclusividade da informação"
-        cta_sugerido = "incentive salvar o post ou compartilhar com quem precisa"
+        gatilho      = "curiosidade e utilidade — entregue valor real que o leitor vai querer guardar e compartilhar"
+        cta_sugerido = "incentive salvar o post ou compartilhar com alguem especifico — ex: 'Manda pra alguem que precisa ler isso'"
 
-    # Exclusão explícita de seções de outros formatos
+    # ── Exclusão de seções de outros formatos ────────────────────────────────
     _nao_usar = []
     if "Carrossel" not in fmt_clean: _nao_usar.append("Cards do Carrossel")
     if "Reels"     not in fmt_clean: _nao_usar.append("Roteiro de Reels")
     if "Stories"   not in fmt_clean: _nao_usar.append("Sequencia de Stories")
     if "Trafego" not in fmt_clean and "Pago" not in fmt_clean: _nao_usar.append("Anuncio Pago")
-    exclusao = f"NAO inclua as secoes: {', '.join(_nao_usar)}." if _nao_usar else ""
+    exclusao = f"NAO inclua: {', '.join(_nao_usar)}." if _nao_usar else ""
 
-    prompt = f"""Você é um copywriter sênior especialista em marketing digital para redes sociais no Brasil.
-Sua missão: criar conteúdo que para o scroll, gera engajamento real e converte.
-Crie exatamente UM conteudo completo. Apenas um, nao mais.
+    prompt = f"""Voce e um copywriter senior com profundo conhecimento do mercado brasileiro.
+NAO escreva como uma IA generica. Escreva como um profissional que conhece este cliente de perto.
+Crie exatamente UM conteudo. Apenas um.
 
 {_NO_MARKDOWN}
 
-FORMATO OBRIGATORIO: {fmt_clean}
-O conteudo deve ser estruturado EXCLUSIVAMENTE como {fmt_clean}. {exclusao}
+FORMATO: {fmt_clean} — {exclusao}
 
-DIRECAO CRIATIVA
-Tom de Voz: {tom}
-{tom_desc}
+════════════════════════════════
+TOM DE VOZ: {tom.upper()}
+════════════════════════════════
+{regras_tom}
 
-Estilo de Estrutura: {estilo}
-{estilo_desc}
+TESTE INTERNO: antes de entregar, releia e pergunte — "isso soa como tom {tom}?"
+Se a resposta for nao, reescreva ate soar.
 
-TECNICAS OBRIGATORIAS
-- Hook: primeira frase deve parar o scroll em menos de 3 segundos. Maximo 10 palavras. Sem introducoes.
-- Gatilho mental para este pilar ({theme['pilar']}): use {gatilho}
-- CTA: {cta_sugerido}
-- Escreva diretamente PARA a persona, como se estivesse conversando com ela
-- Proibido: cliches corporativos ("solucoes inovadoras", "excelencia", "qualidade superior")
-- Prefira linguagem simples, direta e em portugues brasileiro coloquial
+════════════════════════════════
+ESTILO DE ESTRUTURA: {estilo.upper()}
+════════════════════════════════
+{formula_est}
 
-INFORMACOES DO CLIENTE: {client_name}
+════════════════════════════════
+CLIENTE: {client_name}
+════════════════════════════════
 {ctx}
 
-GUIA DE CRIACAO DO FORMATO:
-{guia}
-
+════════════════════════════════
 SOLICITACAO
+════════════════════════════════
 Tema: {theme['tema']}
 Pilar: {theme['pilar']}
 Formato: {fmt_clean}
 Persona-alvo: {theme['persona']}
+Gatilho mental a usar: {gatilho}
+CTA: {cta_sugerido}
 
-Estruture o conteudo com as secoes abaixo:
+════════════════════════════════
+REGRAS ABSOLUTAS
+════════════════════════════════
+PROIBIDO usar estas palavras ou expressoes:
+"solucoes inovadoras", "excelencia", "qualidade superior", "parceria estrategica",
+"expertise", "compromisso", "dedicacao", "transforme sua vida", "nao perca essa oportunidade"
 
-TEMA
-[nome do tema]
+PROIBIDO estrutura generica: nao comece com "Voce sabia que..." nem com "Ola!" nem com o nome da empresa.
 
-PILAR
-[nome do pilar]
+OBRIGATORIO:
+- Hook: primeira linha para o scroll em menos de 3 segundos — maximo 10 palavras
+- Legenda: maximo 750 caracteres
+- Paragrafos: maximo 2 linhas cada — use linha em branco entre paragrafos
+- Emojis: use com criterio, apenas onde reforcem a mensagem
+- Soar como humano, nao como IA
 
-FORMATO
-[nome do formato]
-
-PERSONA-ALVO
-[persona]
-
-OBJETIVO DO POST
-[o que este post deve gerar: venda, lead, engajamento, educacao, etc.]
+════════════════════════════════
+ENTREGUE NESTA ORDEM:
+════════════════════════════════
 
 HOOK
-[primeira frase — maximo 10 palavras — sem introducao — impacto imediato]
-
-TITULO DO POST
-[titulo chamativo para o visual]
+[uma unica linha — maximo 10 palavras — sem introducao — impacto imediato]
 
 LEGENDA
-[legenda completa, com emojis estrategicos, CTA claro no final — maximo 750 caracteres]
+[texto completo seguindo o estilo {estilo} — CTA no final — maximo 750 caracteres]
 
 HASHTAGS
-[3 a 5 hashtags relevantes e especificas, nao genericas]
+[3 a 5 hashtags especificas do nicho, nao genericas como #marketing ou #negocios]
 
 INSTRUCOES PARA DESIGN
-[orientacoes visuais: cores, imagem, texto na arte]
+[orientacoes visuais concretas: o que mostrar na imagem, texto na arte, cor de destaque]
 
-{"CARDS DO CARROSSEL" + chr(10) + "[Card 1 (capa): hook visual — Cards 2 a N: desenvolvimento — Ultimo card: CTA]" if "Carrossel" in fmt_clean else ""}
-{"ROTEIRO DO REELS" + chr(10) + "[Cena 1 (0-3s): hook — Cenas seguintes: conteudo — Cena final: CTA — Trilha sugerida]" if "Reels" in fmt_clean else ""}
-{"SEQUENCIA DE STORIES" + chr(10) + "[Story 1: gancho — Stories 2-4: desenvolvimento — Story 5: CTA com recurso interativo]" if "Stories" in fmt_clean else ""}
-{"ANUNCIO PAGO" + chr(10) + "[Texto primario: max 125 car. — Headline: max 40 car. — Descricao: max 30 car. — Botao CTA — Publico sugerido]" if "Trafego" in fmt_clean or "Pago" in fmt_clean else ""}"""
+{"CARDS DO CARROSSEL" + chr(10) + "[Card 1 (capa): hook visual impactante | Cards 2 a N: um ponto por card, texto curto | Ultimo card: CTA visual]" if "Carrossel" in fmt_clean else ""}
+{"ROTEIRO DO REELS" + chr(10) + "[0-3s: hook visual que prende | 4-15s: desenvolvimento rapido | Ultimos 3s: CTA falado + texto na tela | Trilha sugerida]" if "Reels" in fmt_clean else ""}
+{"SEQUENCIA DE STORIES" + chr(10) + "[Story 1: gancho com pergunta ou afirmacao forte | Stories 2-4: desenvolvimento um por um | Story 5: CTA com recurso interativo (enquete, link, caixa de perguntas)]" if "Stories" in fmt_clean else ""}
+{"ANUNCIO PAGO" + chr(10) + "[Texto primario: max 125 car. | Headline: max 40 car. | Descricao: max 30 car. | Botao CTA | Publico sugerido com interesses especificos]" if "Trafego" in fmt_clean or "Pago" in fmt_clean else ""}"""
 
     raw = _chat([{"role": "user", "content": prompt}], max_tokens=2000, temperature=0.75)
     return clean_text(raw)
