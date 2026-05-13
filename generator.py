@@ -11,7 +11,7 @@ import requests
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 DAILY_LIMIT = 1_500  # requisições/dia no plano gratuito Gemini
 
