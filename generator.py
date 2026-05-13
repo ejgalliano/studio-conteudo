@@ -1,5 +1,5 @@
 """
-Todas as chamadas à API Groq (Llama 3.3 70B).
+Todas as chamadas à API Google Gemini (gemini-1.5-flash).
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
 from __future__ import annotations
@@ -7,11 +7,11 @@ from __future__ import annotations
 import os
 import re
 import time
-from groq import Groq
+import google.generativeai as genai
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
 
-DAILY_LIMIT = 100_000  # tokens/dia no plano gratuito Groq
+DAILY_LIMIT = 1_500  # requisições/dia no plano gratuito Gemini
 
 # Contador de tokens da sessão atual (acumula enquanto o servidor estiver rodando)
 _session_tokens: int = 0
@@ -19,12 +19,13 @@ _session_requests: int = 0
 
 
 def get_token_usage() -> dict:
-    """Retorna uso de tokens da sessão atual."""
+    """Retorna uso de tokens e requisições da sessão atual."""
+    pct_req = min(100, int(_session_requests / DAILY_LIMIT * 100))
     return {
         "used":      _session_tokens,
         "limit":     DAILY_LIMIT,
-        "remaining": max(0, DAILY_LIMIT - _session_tokens),
-        "pct":       min(100, int(_session_tokens / DAILY_LIMIT * 100)),
+        "remaining": max(0, DAILY_LIMIT - _session_requests),
+        "pct":       pct_req,
         "requests":  _session_requests,
     }
 
@@ -32,46 +33,51 @@ def get_token_usage() -> dict:
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Groq; em rate-limit usa fallbacks automaticamente."""
+    """Chama Google Gemini; em rate-limit usa fallback automaticamente."""
     global _session_tokens, _session_requests
 
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise ValueError("GROQ_API_KEY não encontrada. Verifique o arquivo .env")
+        raise ValueError("GOOGLE_API_KEY não encontrada. Verifique os secrets do Streamlit.")
 
-    client = Groq(api_key=api_key)
+    genai.configure(api_key=api_key)
+
+    # Extrai o texto do último (ou único) turno do usuário
+    prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
+
     last_error = None
 
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
         for attempt in range(2):
             try:
-                resp = client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
+                model = genai.GenerativeModel(
+                    model_name=model_name,
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=max_tokens,
+                        temperature=temperature,
+                    ),
                 )
-                # Acumula uso de tokens
-                if hasattr(resp, "usage") and resp.usage:
-                    _session_tokens   += resp.usage.total_tokens
-                    _session_requests += 1
-                return resp.choices[0].message.content
+                resp = model.generate_content(prompt)
+                # Acumula tokens e requisições
+                if hasattr(resp, "usage_metadata") and resp.usage_metadata:
+                    _session_tokens += resp.usage_metadata.total_token_count or 0
+                _session_requests += 1
+                return resp.text
             except Exception as e:
                 err_str = str(e).lower()
-                if "decommissioned" in err_str or "model_decommissioned" in err_str:
-                    last_error = e
-                    break
-                if "429" in str(e) or "rate_limit" in err_str:
-                    wait = 15 if attempt == 0 else 30
+                if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str:
+                    wait = 15 if attempt == 0 else 60
                     last_error = e
                     time.sleep(wait)
                     continue
                 raise
+        # Esgotou tentativas neste modelo, tenta o próximo
+        last_error = Exception(f"Falha no modelo {model_name}") if last_error is None else last_error
         continue
 
     raise RuntimeError(
-        "Limite diário de tokens atingido em todos os modelos.\n\n"
-        "O plano gratuito do Groq permite 100.000 tokens por dia. "
+        "Limite diário de requisições atingido.\n\n"
+        "O plano gratuito do Gemini permite 1.500 requisições por dia. "
         "O limite reseta à meia-noite (horário de Brasília). "
         "Tente novamente mais tarde."
     ) from last_error

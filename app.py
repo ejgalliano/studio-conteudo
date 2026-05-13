@@ -182,7 +182,7 @@ S = st.session_state  # alias curto
 col_title, col_model = st.columns([5, 3])
 col_title.markdown("## 🎯 Studio de Conteúdo")
 with col_model:
-    key_ok = bool(os.getenv("GROQ_API_KEY"))
+    key_ok = bool(os.getenv("GOOGLE_API_KEY"))
     usage  = get_token_usage()
     pct    = usage["pct"]
     cor    = "#27ae60" if pct < 60 else "#f39c12" if pct < 85 else "#e74c3c"
@@ -190,8 +190,8 @@ with col_model:
     st.markdown(
         f"<div style='text-align:right; padding-top:10px; font-size:0.78rem; line-height:1.6'>"
         f"{'✅' if key_ok else '❌'} <b>{MODEL_PRIMARY}</b><br>"
-        f"<span style='color:{cor}'>{emoji} {usage['used']:,} / {usage['limit']:,} tokens ({pct}%)</span>"
-        f" &nbsp;·&nbsp; {usage['requests']} requisições nesta sessão"
+        f"<span style='color:{cor}'>{emoji} {usage['requests']} / {usage['limit']:,} req hoje ({pct}%)</span>"
+        f" &nbsp;·&nbsp; {usage['used']:,} tokens nesta sessão"
         f"</div>",
         unsafe_allow_html=True,
     )
