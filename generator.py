@@ -1,5 +1,5 @@
 """
-Todas as chamadas à API Google Gemini (gemini-1.5-flash).
+Todas as chamadas à API Google Gemini via REST v1 (sem SDK).
 Saídas sem caracteres especiais markdown para facilitar cópia.
 """
 from __future__ import annotations
@@ -7,10 +7,11 @@ from __future__ import annotations
 import os
 import re
 import time
-from google import genai
-from google.genai import types
+import requests
 
 from constants import MODEL_PRIMARY, MODEL_FALLBACKS, SUB_BATCH_SIZE, TONS, ESTILOS
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
 
 DAILY_LIMIT = 1_500  # requisições/dia no plano gratuito Gemini
 
@@ -34,52 +35,56 @@ def get_token_usage() -> dict:
 # ── Chat ──────────────────────────────────────────────────────────────────────
 
 def _chat(messages: list, max_tokens: int = 2000, temperature: float = 0.7) -> str:
-    """Chama Google Gemini; em rate-limit usa fallback automaticamente."""
+    """Chama Google Gemini via REST v1 direto — sem SDK, sem v1beta."""
     global _session_tokens, _session_requests
 
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         raise ValueError("GOOGLE_API_KEY não encontrada. Verifique os secrets do Streamlit.")
 
-    client = genai.Client(api_key=api_key)
-
-    # Extrai o texto do último (ou único) turno do usuário
     prompt = "\n\n".join(m["content"] for m in messages if m.get("role") == "user")
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+        },
+    }
 
     last_error = None
 
     for model_name in [MODEL_PRIMARY] + MODEL_FALLBACKS:
+        url = GEMINI_URL.format(model=model_name)
         for attempt in range(2):
             try:
-                resp = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        max_output_tokens=max_tokens,
-                        temperature=temperature,
-                    ),
+                resp = requests.post(
+                    url,
+                    params={"key": api_key},
+                    json=payload,
+                    timeout=120,
                 )
-                # Acumula tokens e requisições
-                if hasattr(resp, "usage_metadata") and resp.usage_metadata:
-                    _session_tokens += resp.usage_metadata.total_token_count or 0
-                _session_requests += 1
-                return resp.text
-            except Exception as e:
-                err_str = str(e).lower()
-                if "quota" in err_str or "429" in err_str or "resource_exhausted" in err_str:
+                if resp.status_code == 429:
                     wait = 15 if attempt == 0 else 60
-                    last_error = e
+                    last_error = Exception(resp.text)
                     time.sleep(wait)
                     continue
+                resp.raise_for_status()
+                data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                _session_tokens   += data.get("usageMetadata", {}).get("totalTokenCount", 0)
+                _session_requests += 1
+                return text
+            except requests.HTTPError as e:
+                last_error = e
+                break  # erro de modelo — tenta próximo
+            except Exception as e:
                 raise
-        # Esgotou tentativas neste modelo, tenta o próximo
-        last_error = Exception(f"Falha no modelo {model_name}") if last_error is None else last_error
 
     raise RuntimeError(
-        "Limite diário de requisições atingido.\n\n"
-        "O plano gratuito do Gemini permite 1.500 requisições por dia. "
-        "O limite reseta à meia-noite (horário de Brasília). "
-        "Tente novamente mais tarde."
+        "Não foi possível conectar ao Gemini.\n\n"
+        "Verifique se a GOOGLE_API_KEY está correta nos secrets do Streamlit. "
+        "Se o limite diário foi atingido (1.500 req/dia), tente novamente amanhã."
     ) from last_error
 
 
